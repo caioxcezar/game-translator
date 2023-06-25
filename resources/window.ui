@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <interface>
-  <menu id="main-menu"></menu>
+  <menu id="main-menu">
+    <item>
+      <attribute name="label" translatable="yes">_Translate Image</attribute>
+      <attribute name="action">win.translate-image</attribute>
+    </item>
+  </menu>
   <template class="ProfileWindow" parent="AdwApplicationWindow">
     <property name="title" translatable="yes">Game Translator</property>
     <property name="default_width">650</property>
@@ -124,10 +129,10 @@
                                 <property name="margin-end">12</property>
                                 <property name="spacing">12</property>
                                 <child>
-                                  <object class="GtkEntry" id="entry">
-                                    <property name="placeholder-text" translatable="yes">Enter a
-                                      Task…</property>
-                                    <property name="secondary-icon-name">list-add-symbolic</property>
+                                  <object class="GtkDropDown" id="drop_down">
+                                    <property name="model">
+                                      <object class="GtkStringList"></object>
+                                    </property>
                                   </object>
                                 </child>
                                 <child>
@@ -148,6 +153,86 @@
                   </object>
                 </child>
               </object>
+            </property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkStackPage">
+            <property name="name">image</property>
+            <property name="child">
+            <object class="GtkBox">
+              <property name="orientation">vertical</property>
+                <child>
+                  <object class="AdwHeaderBar">
+                    <binding name="show-end-title-buttons">
+                      <lookup name="folded">leaflet</lookup>
+                    </binding>
+                    <child type="start">
+                      <object class="GtkButton">
+                        <property name="icon-name">go-previous-symbolic</property>
+                        <property name="tooltip-text" translatable="yes">Go Back</property>
+                        <property name="action-name">win.new-profile</property>
+                      </object>
+                    </child>
+                    <child type="end">
+                      <object class="GtkWindowControls">
+                        <property name="side">end</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkBox">
+                    <property name="orientation">horizontal</property>
+                    <child>
+                      <object class="GtkDropDown" id="drop_down_ocr"/>
+                    </child>
+                    <child>
+                      <object class="GtkDropDown" id="drop_down_translation"/>
+                    </child>
+                    <child>
+                      <object class="GtkButton">
+                        <property name="label">Search Image</property>
+                        <property name="tooltip-text" translatable="yes">Search Image</property>
+                        <property name="action-name">win.search-image</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkBox">
+                    <property name="orientation">horizontal</property>
+                    <child>
+                      <object class="GtkPicture" id="picture" />
+                    </child>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="orientation">vertical</property>
+                        <child>
+                          <object class="GtkFrame">
+                            <child type="label">
+                              <object class="GtkLabel">Result Text: </object>
+                            </child>
+                            <child>
+                              <object class="GtkEntry" id="ocr_frame" />
+                            </child>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkFrame">
+                            <child type="label">
+                              <object class="GtkLabel">Translated Text: </object>
+                            </child>
+                            <child>
+                              <object class="GtkEntry" id="translator_frame" />
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+            </object>
             </property>
           </object>
         </child>

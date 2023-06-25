@@ -1,5 +1,6 @@
+mod ocr_object;
+mod translator_object;
 mod window;
-
 use adw::prelude::*;
 use gtk::{gio, glib};
 use window::Window;
