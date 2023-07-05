@@ -1,4 +1,5 @@
 mod ocr_object;
+mod rect;
 mod translator_object;
 mod window;
 use adw::prelude::*;

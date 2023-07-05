@@ -121,7 +121,8 @@
                         <property name="child">
                           <object class="AdwClamp">
                             <property name="child">
-                              <object class="GtkBox">
+                              <object class="GtkDrawingArea" id="drawing_area"/>
+                              <!-- <object class="GtkBox">
                                 <property name="orientation">vertical</property>
                                 <property name="margin-top">12</property>
                                 <property name="margin-bottom">12</property>
@@ -144,7 +145,7 @@
                                     </style>
                                   </object>
                                 </child>
-                              </object>
+                              </object> -->
                             </property>
                           </object>
                         </property>
@@ -185,10 +186,10 @@
                   <object class="GtkBox">
                     <property name="orientation">horizontal</property>
                     <child>
-                      <object class="GtkDropDown" id="drop_down_ocr"/>
+                      <object class="GtkDropDown" id="dd_ocr"/>
                     </child>
                     <child>
-                      <object class="GtkDropDown" id="drop_down_translation"/>
+                      <object class="GtkDropDown" id="dd_translation"/>
                     </child>
                     <child>
                       <object class="GtkButton">

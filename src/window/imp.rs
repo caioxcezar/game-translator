@@ -1,9 +1,13 @@
+use std::cell::RefCell;
+
 use adw::subclass::prelude::*;
 use gio::Settings;
 use glib::signal::Inhibit;
 use glib::subclass::InitializingObject;
-use gtk::{gio, glib, CompositeTemplate, DropDown, Entry, Picture, Stack};
+use gtk::{gio, glib, CompositeTemplate, DrawingArea, DropDown, Entry, Picture, Stack};
 use once_cell::sync::OnceCell;
+
+use crate::rect;
 
 // ANCHOR: struct
 // Object holding the state
@@ -13,18 +17,21 @@ pub struct Window {
     pub settings: OnceCell<Settings>,
     #[template_child]
     pub stack: TemplateChild<Stack>,
-    #[template_child]
-    pub drop_down: TemplateChild<DropDown>,
+    // #[template_child]
+    // pub drop_down: TemplateChild<DropDown>,
     #[template_child]
     pub picture: TemplateChild<Picture>,
     #[template_child]
     pub ocr_frame: TemplateChild<Entry>,
     #[template_child]
-    pub drop_down_ocr: TemplateChild<DropDown>,
+    pub dd_ocr: TemplateChild<DropDown>,
     #[template_child]
-    pub drop_down_translation: TemplateChild<DropDown>,
+    pub dd_translation: TemplateChild<DropDown>,
     #[template_child]
     pub translator_frame: TemplateChild<Entry>,
+    #[template_child]
+    pub drawing_area: TemplateChild<DrawingArea>,
+    pub translation_areas: RefCell<Vec<rect::Rect>>,
 }
 // ANCHOR_END: struct
 

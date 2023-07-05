@@ -1,11 +1,11 @@
 mod imp;
-
+use crate::rect::Rect;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gio::Settings;
 use glib::{clone, Object};
 use gtk::{
-    gio,
+    gdk, gio,
     glib::{self, MainContext},
     Expression, PropertyExpression,
 };
@@ -77,6 +77,7 @@ impl Window {
     }
 
     fn setup_data(&self) {
+        self.imp().translation_areas.replace(Vec::new());
         let languages = rusty_tesseract::get_tesseract_langs();
         match languages {
             Ok(values) => {
@@ -85,8 +86,8 @@ impl Window {
                     list.append(&OcrObject::new(lang));
                 }
                 let expression = PropertyExpression::new(OcrObject::static_type(), Expression::NONE, "language");
-                self.imp().drop_down_ocr.set_expression(Some(expression));
-                self.imp().drop_down_ocr.set_model(Some(&list));
+                self.imp().dd_ocr.set_expression(Some(expression));
+                self.imp().dd_ocr.set_model(Some(&list));
             }
             Err(value) => self.dialog("Can't find languages for translation", &format!("{}\r\nPossible cause of the problem: Tesseract is not installed in your system. Please follow the instructions at https://tesseract-ocr.github.io/tessdoc/Installation.html", value)),
         }
@@ -99,10 +100,11 @@ impl Window {
             Expression::NONE,
             "language",
         );
-        self.imp()
-            .drop_down_translation
-            .set_expression(Some(expression));
-        self.imp().drop_down_translation.set_model(Some(&list));
+        self.imp().dd_translation.set_expression(Some(expression));
+        self.imp().dd_translation.set_model(Some(&list));
+
+        self.build_drawing_area();
+
         self.navigate("main")
     }
 
@@ -133,13 +135,78 @@ impl Window {
         );
     }
 
+    fn build_drawing_area(&self) {
+        // self.imp()
+        //     .drawing_area
+        //     .set_draw_func(move |_, cr, _width, _height| {
+        //         let rgba = gdk::RGBA::from_str("DimGray").unwrap();
+        //         // GdkCairoContextExt::set_source_rgba(cr, &rgba);
+        //         let ret = gtk::gdk::Rectangle::new(10, 10, 100, 100);
+        //         GdkCairoContextExt::add_rectangle(cr, &ret);
+        //         // cr.paint().expect("Invalid cairo surface state");
+        //         cr.stroke();
+        //     });
+
+        let drag = gtk::GestureDrag::new();
+
+        // drag.connect_drag_end(|gesture, end_x, end_y| {
+        //     let (start_x, start_y) = gesture.start_point().unwrap();
+        //     GdkCairoContextExt::add_rectangle(
+        //         &window,
+        //         &gtk::cairo::Rectangle::new(start_x, start_y, end_x - start_x, end_y - start_y),
+        //     )
+        // });
+
+        drag.connect_drag_end(
+            clone!(@weak self as window => move |gesture, width, height| {
+                let (x, y) = gesture.start_point().unwrap();
+                let new_rect = Rect {
+                    height: height as i32, width: width as i32, x: x as i32, y: y as i32
+                };
+                let areas = window.imp().translation_areas.try_borrow_mut();
+                if areas.is_err() { return; }
+                let mut areas = areas.unwrap();
+                areas.push(new_rect);
+                let areas = areas.clone();
+                window.imp()
+                    .drawing_area
+                    .set_draw_func(move |_, cr, _width, _height| {
+                        areas.iter().for_each(|area| {
+                            let ret = gtk::gdk::Rectangle::new(area.x, area.y, area.width, area.height);
+                            let rgba = gdk::RGBA::from_str("DimGray").unwrap();
+                            GdkCairoContextExt::set_source_rgba(cr, &rgba);
+    
+                            GdkCairoContextExt::add_rectangle(cr, &ret);
+                            cr.stroke().expect("Invalid cairo surface state");
+                        });
+                    });
+            }),
+        );
+
+        self.imp().drawing_area.add_controller(drag);
+
+        // let click = gtk::GestureClick::new();
+
+        // click.connect_pressed(|_, _, _, _| {
+        //     println!("pressed");
+        // });
+
+        // click.connect_released(|_, _, _, _| {
+        //     println!("released");
+        // });
+
+        // let click = gtk::GestureDrag::new();
+
+        // self.imp().drawing_area.add_controller(click);
+    }
+
     fn ocr_image(&self, path: &str) {
         let mut default_args = Args::default();
         let image = Image::from_path(path);
         if let Ok(image) = image {
             let lang = self
                 .imp()
-                .drop_down_ocr
+                .dd_ocr
                 .selected_item()
                 .and_downcast::<OcrObject>()
                 .unwrap();
@@ -159,7 +226,7 @@ impl Window {
     async fn translate(&self, source: &str, text: &str) {
         let target = self
             .imp()
-            .drop_down_translation
+            .dd_translation
             .selected_item()
             .and_downcast::<TranslatorObject>()
             .unwrap();
