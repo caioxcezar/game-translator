@@ -1,9 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <schemalist>
   <schema id="org.caioxcezar.game_translator" path="/org/caioxcezar/game_translator/">
-    <key name="is-switch-enabled" type="b">
-      <default>false</default>
-      <summary>Default switch state</summary>
+    <key name="ocr-lang" type="u">
+      <default>0</default>
+      <summary>Default OCR Language</summary>
+    </key>
+    <key name="tra-lang" type="u">
+      <default>0</default>
+      <summary>Default Translation Language</summary>
     </key>
   </schema>
 </schemalist>

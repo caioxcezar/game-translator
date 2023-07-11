@@ -3,19 +3,14 @@ use crate::rect::Rect;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gio::Settings;
-use glib::{clone, Object};
-use gtk::{
-    gdk, gio,
-    glib::{self, MainContext},
-    Expression, PropertyExpression,
-};
-use libretranslate::{translate, Language};
-use rusty_tesseract::{Args, Image};
+use glib::{ clone, Object };
+use gtk::{ gdk, gio, glib::{ self, MainContext }, Expression, PropertyExpression };
+use headless_chrome::Browser;
+use rusty_tesseract::{ Args, Image };
 use std::str::FromStr;
-
 use crate::{
-    ocr_object::{OcrData, OcrObject},
-    translator_object::{TranslatorData, TranslatorObject},
+    ocr_object::{ OcrData, OcrObject },
+    translator_object::{ TranslatorData, TranslatorObject },
     APP_ID,
 };
 
@@ -35,40 +30,37 @@ impl Window {
     fn setup_settings(&self) {
         let settings = Settings::new(APP_ID);
         self.imp()
-            .settings
-            .set(settings)
+            .settings.set(settings)
             .expect("`settings` should not be set before calling `setup_settings`.");
     }
 
     fn settings(&self) -> &Settings {
-        self.imp()
-            .settings
-            .get()
-            .expect("`settings` should be set in `setup_settings`.")
+        self.imp().settings.get().expect("`settings` should be set in `setup_settings`.")
     }
 
     fn setup_actions(&self) {
-        // let save_action = self.settings().create_action("save");
-        // self.add_action(&save_action);
-
-        // let import_action = self.settings().create_action("import");
-        // self.add_action(&import_action);
         let action_new_profile = gio::SimpleAction::new("new-profile", None);
-        action_new_profile.connect_activate(clone!(@weak self as window => move |_, _| {
+        action_new_profile.connect_activate(
+            clone!(@weak self as window => move |_, _| {
             window.navigate("main")
-        }));
+        })
+        );
         self.add_action(&action_new_profile);
 
         let action_new_profile = gio::SimpleAction::new("translate-image", None);
-        action_new_profile.connect_activate(clone!(@weak self as window => move |_, _| {
+        action_new_profile.connect_activate(
+            clone!(@weak self as window => move |_, _| {
             window.navigate("image")
-        }));
+        })
+        );
         self.add_action(&action_new_profile);
 
         let action_new_profile = gio::SimpleAction::new("search-image", None);
-        action_new_profile.connect_activate(clone!(@weak self as window => move |_, _| {
+        action_new_profile.connect_activate(
+            clone!(@weak self as window => move |_, _| {
             window.search_image()
-        }));
+        })
+        );
         self.add_action(&action_new_profile);
     }
 
@@ -77,6 +69,9 @@ impl Window {
     }
 
     fn setup_data(&self) {
+        let ocr_lang = self.settings().uint("ocr-lang");
+        let tra_lang = self.settings().uint("tra-lang");
+
         self.imp().translation_areas.replace(Vec::new());
         let languages = rusty_tesseract::get_tesseract_langs();
         match languages {
@@ -85,11 +80,20 @@ impl Window {
                 for lang in values {
                     list.append(&OcrObject::new(lang));
                 }
-                let expression = PropertyExpression::new(OcrObject::static_type(), Expression::NONE, "language");
+                let expression = PropertyExpression::new(
+                    OcrObject::static_type(),
+                    Expression::NONE,
+                    "language"
+                );
                 self.imp().dd_ocr.set_expression(Some(expression));
                 self.imp().dd_ocr.set_model(Some(&list));
+                self.imp().dd_ocr.set_selected(ocr_lang);
             }
-            Err(value) => self.dialog("Can't find languages for translation", &format!("{}\r\nPossible cause of the problem: Tesseract is not installed in your system. Please follow the instructions at https://tesseract-ocr.github.io/tessdoc/Installation.html", value)),
+            Err(value) =>
+                self.dialog(
+                    "Can't find languages for translation",
+                    &format!("{}\r\nPossible cause of the problem: Tesseract is not installed in your system. Please follow the instructions at https://tesseract-ocr.github.io/tessdoc/Installation.html", value)
+                ),
         }
         let list = gio::ListStore::new(TranslatorObject::static_type());
         for lang in TranslatorData::all_languages() {
@@ -98,18 +102,20 @@ impl Window {
         let expression = PropertyExpression::new(
             TranslatorObject::static_type(),
             Expression::NONE,
-            "language",
+            "language"
         );
         self.imp().dd_translation.set_expression(Some(expression));
         self.imp().dd_translation.set_model(Some(&list));
-
+        self.imp().dd_translation.set_selected(tra_lang);
         self.build_drawing_area();
 
-        self.navigate("main")
+        //self.navigate("main")
+        self.navigate("image")
     }
 
     fn dialog(&self, message: &str, detail: &str) {
-        let dialog = gtk::AlertDialog::builder()
+        let dialog = gtk::AlertDialog
+            ::builder()
             .detail(detail)
             .message(message)
             .modal(true)
@@ -118,9 +124,12 @@ impl Window {
     }
 
     fn search_image(&self) {
-        let file_dialog = gtk::FileDialog::builder()
-            .title("Select a image to translate")
-            .build();
+        let dd_ocr = self.imp().dd_ocr.selected();
+        let dd_translation = self.imp().dd_translation.selected();
+        let _ = self.settings().set("ocr-lang", dd_ocr);
+        let _ = self.settings().set("tra-lang", dd_translation);
+
+        let file_dialog = gtk::FileDialog::builder().title("Select a image to translate").build();
 
         file_dialog.open(
             Some(self),
@@ -131,7 +140,7 @@ impl Window {
                 let path = file.path().unwrap();
                 window.ocr_image(path.to_str().unwrap());
                 window.imp().picture.set_file(Some(&file))
-            }),
+            })
         );
     }
 
@@ -180,7 +189,7 @@ impl Window {
                             cr.stroke().expect("Invalid cairo surface state");
                         });
                     });
-            }),
+            })
         );
 
         self.imp().drawing_area.add_controller(drag);
@@ -204,41 +213,88 @@ impl Window {
         let mut default_args = Args::default();
         let image = Image::from_path(path);
         if let Ok(image) = image {
-            let lang = self
-                .imp()
-                .dd_ocr
-                .selected_item()
-                .and_downcast::<OcrObject>()
-                .unwrap();
+            let lang = self.imp().dd_ocr.selected_item().and_downcast::<OcrObject>().unwrap();
             default_args.lang = lang.code();
             let output = rusty_tesseract::image_to_string(&image, &default_args).unwrap();
             self.imp().ocr_frame.set_text(&output);
 
             let main_context = MainContext::default();
 
-            main_context.spawn_local(clone!(@weak self as window => async move {
+            main_context.spawn_local(
+                clone!(@weak self as window => async move {
                 let ocr = OcrData { code: lang.code(), language: lang.language() };
                 window.translate(&ocr.to_translator().code, &output).await;
-            }));
+            })
+            );
         }
+    }
+
+    fn translate_from_deepl(
+        &self,
+        target: &str,
+        source: &str,
+        text: &str
+    ) -> Result<String, anyhow::Error> {
+        let path = "//span[contains(@class, \"sentence_highlight\")]";
+        let url = format!(
+            "https://deepl.com/en/translator#{}/{}/{}",
+            source,
+            target,
+            text.replace(' ', "%20")
+        );
+        let browser = Browser::default()?;
+        let tab = browser.new_tab()?;
+        tab.navigate_to(&url)?;
+        tab.wait_until_navigated()?;
+        let mut translated_text = "".to_owned();
+        for element in tab.wait_for_elements_by_xpath(path)?.iter() {
+            if let Ok(txt) = element.get_inner_text() {
+                translated_text.push_str(&txt);
+            }
+        }
+        Ok(translated_text)
+    }
+
+    fn translate_from_google(
+        &self,
+        target: &str,
+        source: &str,
+        text: &str
+    ) -> Result<String, anyhow::Error> {
+        let path = "//*[@jsname=\"W297wb\"]";
+        let url = format!(
+            "https://translate.google.com.br/?sl={}&tl={}&text=${}&op=translate",
+            source,
+            target,
+            text.replace(' ', "%20")
+        );
+        let browser = Browser::default()?;
+        let tab = browser.new_tab()?;
+        tab.navigate_to(&url)?;
+        tab.wait_until_navigated()?;
+        let mut translated_text = "".to_owned();
+        for element in tab.wait_for_elements_by_xpath(path)?.iter() {
+            if let Ok(txt) = element.get_inner_text() {
+                translated_text.push_str(&txt);
+            }
+        }
+        Ok(translated_text)
     }
 
     async fn translate(&self, source: &str, text: &str) {
         let target = self
             .imp()
-            .dd_translation
-            .selected_item()
+            .dd_translation.selected_item()
             .and_downcast::<TranslatorObject>()
             .unwrap();
-
-        let s = Language::from_str(source).unwrap();
-        let t = Language::from_str(&target.code()).unwrap();
-        let data = translate(s, t, text, None).await;
-        match data {
-            Ok(value) => {
-                self.imp().ocr_frame.set_text(&value.output);
-            }
-            Err(value) => self.dialog("Can't translate", &value.to_string()),
+        let translated_text = self.translate_from_deepl(
+            &target.code(),
+            source,
+            &urlencoding::encode(text)
+        );
+        match translated_text {
+            Ok(txt) => { self.imp().translator_frame.set_text(&txt) }
+            Err(err) => { self.dialog("Translation error", &err.to_string()) }
         }
     }
 }
