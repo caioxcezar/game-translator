@@ -25,8 +25,7 @@ pub struct Window {
     pub dd_translation: TemplateChild<DropDown>,
     #[template_child]
     pub translator_frame: TemplateChild<Entry>,
-    #[template_child]
-    pub drawing_area: TemplateChild<DrawingArea>,
+    pub drawing_area: DrawingArea,
     pub translation_areas: RefCell<Vec<rect::Rect>>,
 }
 // ANCHOR_END: struct

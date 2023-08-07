@@ -627,7 +627,7 @@ dependencies = [
 
 [[package]]
 name = "game-translator"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "failure",
@@ -1632,15 +1632,16 @@ checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
 
 [[package]]
 name = "screenshots"
-version = "0.6.0"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a9ad94ff24ed04a594f77ab87feb2aa12e9db3eed47321f71e01e75882c5b45"
+checksum = "a5949a375cfa59d2da560c886629e237b7471074ddaf64ce81fe6f96a1a15ec7"
 dependencies = [
  "anyhow",
  "core-graphics",
  "dbus",
  "display-info",
  "fxhash",
+ "percent-encoding",
  "png",
  "widestring",
  "windows",

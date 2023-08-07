@@ -4,10 +4,11 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gio::Settings;
 use glib::{ clone, Object };
-use gtk::{ gdk, gio, glib::{ self, MainContext }, Expression, PropertyExpression };
+use gtk::{ gio, glib::{ self }, Expression, PropertyExpression };
 use headless_chrome::Browser;
 use rusty_tesseract::{ Args, Image };
-use std::str::FromStr;
+use screenshots::{ Screen, Compression };
+use std::fs;
 use crate::{
     ocr_object::{ OcrData, OcrObject },
     translator_object::{ TranslatorData, TranslatorObject },
@@ -47,21 +48,22 @@ impl Window {
         );
         self.add_action(&action_new_profile);
 
-        let action_new_profile = gio::SimpleAction::new("translate-image", None);
-        action_new_profile.connect_activate(
+        let translate_image = gio::SimpleAction::new("translate-image", None);
+        translate_image.connect_activate(
             clone!(@weak self as window => move |_, _| {
             window.navigate("image")
         })
         );
-        self.add_action(&action_new_profile);
+        self.add_action(&translate_image);
 
-        let action_new_profile = gio::SimpleAction::new("search-image", None);
-        action_new_profile.connect_activate(
+        let search_image = gio::SimpleAction::new("search-image", None);
+        search_image.connect_activate(
             clone!(@weak self as window => move |_, _| {
-            window.search_image()
+            // window.search_image()
+            window.translation_page()
         })
         );
-        self.add_action(&action_new_profile);
+        self.add_action(&search_image);
     }
 
     fn navigate(&self, page: &str) {
@@ -107,7 +109,6 @@ impl Window {
         self.imp().dd_translation.set_expression(Some(expression));
         self.imp().dd_translation.set_model(Some(&list));
         self.imp().dd_translation.set_selected(tra_lang);
-        self.build_drawing_area();
 
         //self.navigate("main")
         self.navigate("image")
@@ -121,6 +122,20 @@ impl Window {
             .modal(true)
             .build();
         dialog.show(Some(self))
+    }
+
+    fn translation_page(&self) {
+        self.ocr_screen();
+
+        let page = gtk::Window
+            ::builder()
+            .maximized(true)
+            .decorated(false)
+            .child(&self.imp().drawing_area)
+            .css_classes(["overlay"].to_vec())
+            .build();
+
+        page.set_visible(true);
     }
 
     fn search_image(&self) {
@@ -144,69 +159,63 @@ impl Window {
         );
     }
 
-    fn build_drawing_area(&self) {
-        // self.imp()
-        //     .drawing_area
-        //     .set_draw_func(move |_, cr, _width, _height| {
-        //         let rgba = gdk::RGBA::from_str("DimGray").unwrap();
-        //         // GdkCairoContextExt::set_source_rgba(cr, &rgba);
-        //         let ret = gtk::gdk::Rectangle::new(10, 10, 100, 100);
-        //         GdkCairoContextExt::add_rectangle(cr, &ret);
-        //         // cr.paint().expect("Invalid cairo surface state");
-        //         cr.stroke();
-        //     });
+    fn draw_text(&self) {
+        let areas = self.imp().translation_areas.try_borrow_mut();
+        if areas.is_err() {
+            return;
+        }
+        let areas = areas.unwrap();
+        let areas = areas.clone();
+        self.imp().drawing_area.set_draw_func(move |_, cr, _width, _height| {
+            cr.set_source_rgba(250.0, 0.0, 250.0, 1.0);
+            cr.set_antialias(gtk::cairo::Antialias::Fast);
+            areas.iter().for_each(|area| {
+                cr.move_to(area.x as f64, area.y as f64);
+                cr.select_font_face(
+                    "Noto Sans",
+                    gtk::cairo::FontSlant::Normal,
+                    gtk::cairo::FontWeight::Normal
+                );
+                cr.set_font_size(32.0);
+                let _ = cr.show_text(&area.text);
+            });
+            cr.stroke().expect("Invalid cairo surface state");
+        });
+    }
 
-        let drag = gtk::GestureDrag::new();
-
-        // drag.connect_drag_end(|gesture, end_x, end_y| {
-        //     let (start_x, start_y) = gesture.start_point().unwrap();
-        //     GdkCairoContextExt::add_rectangle(
-        //         &window,
-        //         &gtk::cairo::Rectangle::new(start_x, start_y, end_x - start_x, end_y - start_y),
-        //     )
-        // });
-
-        drag.connect_drag_end(
-            clone!(@weak self as window => move |gesture, width, height| {
-                let (x, y) = gesture.start_point().unwrap();
+    fn ocr_screen(&self) {
+        let mut default_args = Args::default();
+        let screens = Screen::all().unwrap();
+        let screen = screens[0];
+        let screenshot = screen.capture();
+        if screenshot.is_err() {
+            return;
+        }
+        let screenshot = screenshot.unwrap();
+        let buffer = screenshot.to_png(Compression::Fast).unwrap();
+        fs::write("target/current_capture.png", buffer).unwrap();
+        let image = Image::from_path("target/current_capture.png");
+        if let Ok(image) = image {
+            let lang = self.imp().dd_ocr.selected_item().and_downcast::<OcrObject>().unwrap();
+            default_args.lang = lang.code();
+            let output = rusty_tesseract::image_to_data(&image, &default_args).unwrap();
+            let mut areas = Vec::new();
+            for dt in output.data {
+                if dt.conf <= 0.0 {
+                    continue;
+                }
                 let new_rect = Rect {
-                    height: height as i32, width: width as i32, x: x as i32, y: y as i32
+                    height: dt.height,
+                    width: dt.width,
+                    x: dt.left,
+                    y: dt.top,
+                    text: dt.text,
                 };
-                let areas = window.imp().translation_areas.try_borrow_mut();
-                if areas.is_err() { return; }
-                let mut areas = areas.unwrap();
                 areas.push(new_rect);
-                let areas = areas.clone();
-                window.imp()
-                    .drawing_area
-                    .set_draw_func(move |_, cr, _width, _height| {
-                        areas.iter().for_each(|area| {
-                            let ret = gtk::gdk::Rectangle::new(area.x, area.y, area.width, area.height);
-                            let rgba = gdk::RGBA::from_str("DimGray").unwrap();
-                            GdkCairoContextExt::set_source_rgba(cr, &rgba);
-    
-                            GdkCairoContextExt::add_rectangle(cr, &ret);
-                            cr.stroke().expect("Invalid cairo surface state");
-                        });
-                    });
-            })
-        );
-
-        self.imp().drawing_area.add_controller(drag);
-
-        // let click = gtk::GestureClick::new();
-
-        // click.connect_pressed(|_, _, _, _| {
-        //     println!("pressed");
-        // });
-
-        // click.connect_released(|_, _, _, _| {
-        //     println!("released");
-        // });
-
-        // let click = gtk::GestureDrag::new();
-
-        // self.imp().drawing_area.add_controller(click);
+            }
+            self.imp().translation_areas.replace(areas);
+            self.draw_text();
+        }
     }
 
     fn ocr_image(&self, path: &str) {
@@ -215,17 +224,11 @@ impl Window {
         if let Ok(image) = image {
             let lang = self.imp().dd_ocr.selected_item().and_downcast::<OcrObject>().unwrap();
             default_args.lang = lang.code();
-            let output = rusty_tesseract::image_to_string(&image, &default_args).unwrap();
-            self.imp().ocr_frame.set_text(&output);
+            let ocr = OcrData { code: lang.code(), language: lang.language() };
+            let text = rusty_tesseract::image_to_string(&image, &default_args).unwrap();
 
-            let main_context = MainContext::default();
-
-            main_context.spawn_local(
-                clone!(@weak self as window => async move {
-                let ocr = OcrData { code: lang.code(), language: lang.language() };
-                window.translate(&ocr.to_translator().code, &output).await;
-            })
-            );
+            self.imp().ocr_frame.set_text(&text);
+            self.translate(&ocr.to_translator().code, &text);
         }
     }
 
@@ -281,13 +284,13 @@ impl Window {
         Ok(translated_text)
     }
 
-    async fn translate(&self, source: &str, text: &str) {
+    fn translate(&self, source: &str, text: &str) {
         let target = self
             .imp()
             .dd_translation.selected_item()
             .and_downcast::<TranslatorObject>()
             .unwrap();
-        let translated_text = self.translate_from_deepl(
+        let translated_text = self.translate_from_google(
             &target.code(),
             source,
             &urlencoding::encode(text)
