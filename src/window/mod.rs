@@ -256,7 +256,7 @@ impl Window {
                 if line.text.trim().eq("") {
                     continue;
                 }
-                line.text = line.text.trim().to_owned();
+                line.text = line.text.trim().to_string();
                 texts.push(line.clone());
                 line = Default::default();
                 continue;
@@ -347,10 +347,11 @@ impl Window {
             .dd_translation.selected_item()
             .and_downcast::<TranslatorObject>()
             .unwrap();
-        let translated_text = match self.settings().string("tra-provider").as_str() {
-            "deepl" =>
-                self.translate_from_deepl(&target.code(), source, &urlencoding::encode(text)),
-            _ => self.translate_from_google(&target.code(), source, &urlencoding::encode(text)),
+        let provider = self.settings().string("tra-provider");
+        let translated_text = match provider.as_str() {
+            "google" =>
+                self.translate_from_google(&target.code(), source, &urlencoding::encode(text)),
+            _ => self.translate_from_deepl(&target.code(), source, &urlencoding::encode(text)),
         };
         match translated_text {
             Ok(txt) => { self.imp().translator_frame.set_text(&txt) }
