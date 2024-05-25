@@ -26,6 +26,8 @@ pub struct Window {
     #[template_child]
     pub translator_frame: TemplateChild<Entry>,
     pub drawing_area: DrawingArea,
+    pub texts: RefCell<Vec<rect::Rect>>,
+    pub use_areas: gtk::Switch,
     pub translation_areas: RefCell<Vec<rect::Rect>>,
 }
 // ANCHOR_END: struct

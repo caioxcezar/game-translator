@@ -9,5 +9,9 @@
       <default>0</default>
       <summary>Default Translation Language</summary>
     </key>
+    <key name="tra-provider" type="s">
+      <default>google</default>
+      <summary>Default Translation Engine</summary>
+    </key>
   </schema>
 </schemalist>
