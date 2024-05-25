@@ -2,9 +2,20 @@ mod imp;
 use crate::rect::Rect;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use gdk4_win32::windows::{
+    core::s,
+    Win32::UI::WindowsAndMessaging::{
+        FindWindowA,
+        SetWindowPos,
+        HWND_TOPMOST,
+        SWP_NOACTIVATE,
+        SWP_NOMOVE,
+        SWP_NOSIZE,
+    },
+};
 use gio::Settings;
 use glib::{ clone, Object };
-use gtk::{ gio, glib::{ self }, Expression, PropertyExpression };
+use gtk::{ gio, glib::{ self, PropertyGet }, Expression, PropertyExpression };
 use headless_chrome::Browser;
 use rusty_tesseract::{ Args, Image };
 use screenshots::{ Screen, Compression };
@@ -167,6 +178,8 @@ impl Window {
         //let _ = self.draw_text();
         let page = gtk::Window
             ::builder()
+            .title("GT Overlay")
+            .name("translation-page")
             .maximized(true)
             .decorated(true)
             .child(&self.imp().drawing_area)
@@ -174,6 +187,18 @@ impl Window {
             .build();
         page.set_visible(true);
         self.set_drag_action();
+        unsafe {
+            let hwnd = FindWindowA(s!("gdkSurfaceToplevel"), s!("GT Overlay"));
+            let _ = SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE
+            );
+        }
     }
 
     fn search_image(&self) {

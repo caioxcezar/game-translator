@@ -17,6 +17,7 @@ failure = "0.1.8"
 anyhow = "1.0.71"
 rayon = "1.7.0"
 uuid = { version = "1.4.1", package = "uuid", features = ["v4", "fast-rng"] }
+gdk4-win32 = { version = "0.8.2", features = ["v4_4", "win32"] }
 [build-dependencies]
 glib-build-tools = "0.17.0"
 gtk = { version = "0.6.2", package = "gtk4" }
