@@ -1,5 +1,5 @@
 mod imp;
-use crate::rect::{ self, Rect };
+use crate::rect::Rect;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gdk4_win32::windows::{
@@ -253,8 +253,14 @@ impl Window {
     }
 
     fn translation_page(&self) {
-        let _ = self.ocr_areas();
-        // let _ = self.translate_from_ocr();
+        let lang = self.imp().dd_ocr.selected_item().and_downcast::<OcrObject>().unwrap();
+        let target = self
+            .imp()
+            .dd_translation.selected_item()
+            .and_downcast::<TranslatorObject>()
+            .unwrap();
+        let _ = self.ocr_areas(&lang);
+        let _ = self.translate_from_ocr(&lang, &target);
         let _ = self.draw_text();
         self.open_overlay_page(true);
     }
@@ -284,7 +290,6 @@ impl Window {
         let rects = self.imp().texts.try_borrow_mut()?;
         let rects = rects.clone();
         self.imp().drawing_area.set_draw_func(move |_, cr, _width, _height| {
-            cr.set_source_rgba(250.0, 0.0, 250.0, 1.0);
             cr.set_antialias(gtk::cairo::Antialias::Fast);
             for rect in rects.iter() {
                 draw_line(cr, rect);
@@ -294,13 +299,12 @@ impl Window {
         Ok(())
     }
 
-    fn ocr_areas(&self) -> Result<(), anyhow::Error> {
+    fn ocr_areas(&self, lang: &OcrObject) -> Result<(), anyhow::Error> {
         let screens = Screen::all()?;
         let screen = screens[0];
         let areas = self.imp().translation_areas.try_borrow()?;
         let areas = areas.clone();
         let mut default_args = Args::default();
-        let lang = self.imp().dd_ocr.selected_item().and_downcast::<OcrObject>().unwrap();
         default_args.lang = lang.code();
         let rects = areas
             .par_iter()
@@ -374,7 +378,7 @@ impl Window {
         source: &str,
         text: &str
     ) -> Result<String, anyhow::Error> {
-        let path = "//span[contains(@class, \"sentence_highlight\")]";
+        let path = "//*[@id=\"textareasContainer\"]/div[3]/section/div[1]/d-textarea/div";
         let url = format!(
             "https://deepl.com/en/translator#{}/{}/{}",
             source,
@@ -438,36 +442,34 @@ impl Window {
         }
     }
 
-    fn translate_from_ocr(&self) -> Result<(), anyhow::Error> {
-        let lang = self.imp().dd_ocr.selected_item().and_downcast::<OcrObject>().unwrap();
+    fn translate_from_ocr(
+        &self,
+        lang: &OcrObject,
+        target: &TranslatorObject
+    ) -> Result<(), anyhow::Error> {
         let ocr = OcrData { code: lang.code(), language: lang.language() };
         let mut rects = self.imp().texts.try_borrow_mut()?;
-        let text: String = rects
+        let text = rects
             .iter()
-            .map(|area| { area.text.clone() })
+            .map(|rect| rect.text.clone())
             .collect::<Vec<String>>()
-            .join("\n");
-        let target = self
-            .imp()
-            .dd_translation.selected_item()
-            .and_downcast::<TranslatorObject>()
-            .unwrap();
-        let text = match self.settings().string("tra-provider").as_str() {
+            .join("\n=+=\n");
+        let text = (match self.settings().string("tra-provider").as_str() {
             "deepl" =>
                 self.translate_from_deepl(
                     &target.code(),
                     &ocr.to_translator().code,
                     &urlencoding::encode(&text)
-                )?,
+                ),
             _ =>
                 self.translate_from_google(
                     &target.code(),
                     &ocr.to_translator().code,
                     &urlencoding::encode(&text)
-                )?,
-        };
-        let text = text.split('\n').collect::<Vec<&str>>();
-        for (i, tx) in text.iter().enumerate() {
+                ),
+        })?;
+        let texts = text.split("\n=+=\n").collect::<Vec<&str>>();
+        for (i, tx) in texts.iter().enumerate() {
             rects[i].text = tx.to_string();
         }
         Ok(())
@@ -481,7 +483,6 @@ fn ocr_area(area: &Rect, screen: &Screen, default_args: &Args) -> Result<Rect, a
     let image = Image::from_path(&path)?;
     let text = rusty_tesseract::image_to_string(&image, default_args)?.trim().to_string();
     fs::remove_file(&path)?;
-    println!("OCR: {}", text);
     Ok(Rect {
         x: area.x,
         y: area.y,
@@ -494,7 +495,11 @@ fn ocr_area(area: &Rect, screen: &Screen, default_args: &Args) -> Result<Rect, a
 fn draw_line(cr: &gtk::cairo::Context, rect: &Rect) {
     let x = rect.x as f64;
     let y = rect.y as f64;
-    cr.select_font_face("Noto Sans", gtk::cairo::FontSlant::Normal, gtk::cairo::FontWeight::Normal);
+    cr.select_font_face(
+        "times, serif",
+        gtk::cairo::FontSlant::Normal,
+        gtk::cairo::FontWeight::Normal
+    );
     let chars: Vec<char> = rect.text.chars().collect();
     if chars.is_empty() {
         return;
@@ -504,8 +509,20 @@ fn draw_line(cr: &gtk::cairo::Context, rect: &Rect) {
     cr.set_font_size(font_size);
     let mut pos_y = font_size;
     for line in lines {
-        cr.move_to(x, y + pos_y);
-        let _ = cr.show_text(line);
+        draw_text_with_outline(cr, x, y + pos_y, line);
         pos_y += font_size;
     }
+}
+
+fn draw_text_with_outline(cr: &gtk::cairo::Context, x: f64, y: f64, text: &str) {
+    cr.set_source_rgba(0.0, 0.0, 0.0, 1.0);
+    for _x in [x - 1.5, x + 1.5] {
+        for _y in [y - 1.5, y + 1.5] {
+            cr.move_to(_x, _y);
+            let _ = cr.show_text(text);
+        }
+    }
+    cr.move_to(x, y);
+    cr.set_source_rgba(255.0, 255.0, 255.0, 1.0);
+    let _ = cr.show_text(text);
 }
