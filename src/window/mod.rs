@@ -1,12 +1,14 @@
 mod imp;
-use crate::rect::Rect;
+use crate::rect::{ self, Rect };
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gdk4_win32::windows::{
     core::s,
     Win32::UI::WindowsAndMessaging::{
         FindWindowA,
+        SetWindowLongPtrA,
         SetWindowPos,
+        GWL_EXSTYLE,
         HWND_TOPMOST,
         SWP_NOACTIVATE,
         SWP_NOMOVE,
@@ -15,10 +17,10 @@ use gdk4_win32::windows::{
 };
 use gio::Settings;
 use glib::{ clone, Object };
-use gtk::{ gio, glib::{ self, PropertyGet }, Expression, PropertyExpression };
+use gtk::{ gio, glib::{ self }, Expression, PropertyExpression };
 use headless_chrome::Browser;
 use rusty_tesseract::{ Args, Image };
-use screenshots::{ Screen, Compression };
+use screenshots::Screen;
 use std::fs;
 use crate::{
     ocr_object::{ OcrData, OcrObject },
@@ -53,37 +55,71 @@ impl Window {
     }
 
     fn setup_actions(&self) {
-        let action_new_profile = gio::SimpleAction::new("new-profile", None);
-        action_new_profile.connect_activate(
-            clone!(@weak self as window => move |_, _| {
-            window.navigate("main")
-        })
+        self.add_simple_action(
+            "new-profile",
+            clone!(@weak self as window => move |_, _| window.navigate("main"))
         );
-        self.add_action(&action_new_profile);
 
-        let translate_image = gio::SimpleAction::new("translate-image", None);
-        translate_image.connect_activate(
-            clone!(@weak self as window => move |_, _| {
-            window.navigate("image")
-        })
+        self.add_simple_action(
+            "translate-image",
+            clone!(@weak self as window => move |_, _| window.navigate("image"))
         );
-        self.add_action(&translate_image);
 
-        let search_image = gio::SimpleAction::new("search-image", None);
-        search_image.connect_activate(
-            clone!(@weak self as window => move |_, _| {
-            window.search_image()
-        })
-        );
-        self.add_action(&search_image);
+        self.set_language_action();
 
-        let translate_page = gio::SimpleAction::new("translate-page", None);
-        translate_page.connect_activate(
-            clone!(@weak self as window => move |_, _| {
-            window.translation_page()
-        })
+        self.add_simple_action(
+            "search-image",
+            clone!(@weak self as window => move |_, _| window.search_image())
         );
-        self.add_action(&translate_page);
+
+        self.add_simple_action(
+            "translate-page",
+            clone!(@weak self as window => move |_, _| window.translation_page())
+        );
+
+        self.add_simple_action(
+            "configure-page",
+            clone!(@weak self as window => move |_, _| window.configure_page())
+        );
+    }
+
+    fn add_simple_action<F: Fn(&gio::SimpleAction, std::option::Option<&glib::Variant>) + 'static>(
+        &self,
+        name: &str,
+        callback: F
+    ) {
+        let action = gio::SimpleAction::new(name, None);
+        action.connect_activate(callback);
+        self.add_action(&action);
+    }
+
+    fn add_toggle_action<F: Fn(&gio::SimpleAction, std::option::Option<&glib::Variant>) + 'static>(
+        &self,
+        name: &str,
+        value: &str,
+        f: F
+    ) {
+        let action = gio::SimpleAction::new_stateful(
+            name,
+            Some(glib::VariantTy::STRING),
+            glib::Variant::from(value)
+        );
+        action.connect_change_state(f);
+        self.add_action(&action);
+    }
+
+    fn set_language_action(&self) {
+        let provider = self.settings().string("tra-provider");
+        self.add_toggle_action(
+            "toggle-language",
+            provider.as_str(),
+            clone!(@weak self as window => move |action, value| {
+                let new_value = value.unwrap().to_owned();
+                let str_value = new_value.str().unwrap();
+                let _ = window.settings().set("tra-provider", str_value);
+                action.set_state(new_value);
+            })
+        )
     }
 
     fn navigate(&self, page: &str) {
@@ -149,9 +185,19 @@ impl Window {
         controller.connect_drag_end(
             clone!(@weak self as window => move |gesture, width, height| {
                 let (x, y) = gesture.start_point().unwrap();
-                let new_rect = Rect {
-                    height: height as i32, width: width as i32, x: x as i32, y: y as i32, ..Default::default()
-                };
+                let mut x = x as i32;
+                let mut y = y as i32;
+                let mut height = height as i32;
+                let mut width = width as i32;
+                if height < 0 {
+                    height = -height;
+                    y -= height;
+                }
+                if width < 0 {
+                    width = -width;
+                    x -= width;
+                }
+                let new_rect = Rect { height, width, x, y, ..Default::default() };
                 let areas = window.imp().translation_areas.try_borrow_mut();
                 if areas.is_err() { return; }
                 let mut areas = areas.unwrap();
@@ -172,23 +218,23 @@ impl Window {
         self.imp().drawing_area.add_controller(controller);
     }
 
-    fn translation_page(&self) {
-        let _ = self.ocr_screen();
-        // let _ = self.translate_from_ocr();
-        //let _ = self.draw_text();
+    fn open_overlay_page(&self, intangible: bool) {
         let page = gtk::Window
             ::builder()
             .title("GT Overlay")
             .name("translation-page")
             .maximized(true)
-            .decorated(true)
+            .decorated(false)
             .child(&self.imp().drawing_area)
             .css_classes(["overlay"].to_vec())
             .build();
         page.set_visible(true);
-        self.set_drag_action();
         unsafe {
             let hwnd = FindWindowA(s!("gdkSurfaceToplevel"), s!("GT Overlay"));
+            // WS_EX_TRANSPARENT = 32
+            // WS_EX_LAYERED = 524288
+            let dwnewlong = if intangible { 32 | 524288 } else { 32 };
+            let _ = SetWindowLongPtrA(hwnd, GWL_EXSTYLE, dwnewlong);
             let _ = SetWindowPos(
                 hwnd,
                 HWND_TOPMOST,
@@ -199,6 +245,18 @@ impl Window {
                 SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE
             );
         }
+    }
+
+    fn configure_page(&self) {
+        self.open_overlay_page(false);
+        self.set_drag_action();
+    }
+
+    fn translation_page(&self) {
+        let _ = self.ocr_areas();
+        // let _ = self.translate_from_ocr();
+        let _ = self.draw_text();
+        self.open_overlay_page(true);
     }
 
     fn search_image(&self) {
@@ -229,37 +287,34 @@ impl Window {
             cr.set_source_rgba(250.0, 0.0, 250.0, 1.0);
             cr.set_antialias(gtk::cairo::Antialias::Fast);
             for rect in rects.iter() {
-                cr.move_to(rect.x as f64, rect.y as f64);
-                cr.select_font_face(
-                    "Noto Sans",
-                    gtk::cairo::FontSlant::Normal,
-                    gtk::cairo::FontWeight::Normal
-                );
-                let chars: Vec<char> = rect.text.chars().collect();
-                if chars.is_empty() {
-                    continue;
-                }
-                cr.set_font_size(rect.height as f64);
-                let _ = cr.show_text(&rect.text);
+                draw_line(cr, rect);
             }
             cr.stroke().expect("Invalid cairo surface state");
         });
         Ok(())
     }
 
-    fn ocr_area(&self) -> Result<(), anyhow::Error> {
+    fn ocr_areas(&self) -> Result<(), anyhow::Error> {
         let screens = Screen::all()?;
         let screen = screens[0];
         let areas = self.imp().translation_areas.try_borrow()?;
         let areas = areas.clone();
-        areas.par_iter().for_each(|area| {
-            let id = Uuid::new_v4().to_string();
-            let screenshot = screen
-                .capture_area(area.x, area.y, area.width as u32, area.height as u32)
-                .unwrap();
-            let buffer = screenshot.to_png(Compression::Fast).unwrap();
-            fs::write(format!("target/{}.png", id), buffer).unwrap();
-        });
+        let mut default_args = Args::default();
+        let lang = self.imp().dd_ocr.selected_item().and_downcast::<OcrObject>().unwrap();
+        default_args.lang = lang.code();
+        let rects = areas
+            .par_iter()
+            .flat_map(
+                |area| -> Result<Rect, anyhow::Error> {
+                    let result = ocr_area(area, &screen, &default_args);
+                    if result.is_err() {
+                        println!("Error: {:?}", &result);
+                    }
+                    result
+                }
+            )
+            .collect::<Vec<Rect>>();
+        self.imp().texts.replace(rects);
         Ok(())
     }
 
@@ -268,8 +323,7 @@ impl Window {
         let screens = Screen::all()?;
         let screen = screens[0];
         let screenshot = screen.capture()?;
-        let buffer = screenshot.to_png(Compression::Fast)?;
-        fs::write("target/current_capture.png", buffer)?;
+        screenshot.save("target/current_capture.png")?;
         let image = Image::from_path("target/current_capture.png")?;
         let lang = self.imp().dd_ocr.selected_item().and_downcast::<OcrObject>().unwrap();
         default_args.lang = lang.code();
@@ -388,7 +442,7 @@ impl Window {
         let lang = self.imp().dd_ocr.selected_item().and_downcast::<OcrObject>().unwrap();
         let ocr = OcrData { code: lang.code(), language: lang.language() };
         let mut rects = self.imp().texts.try_borrow_mut()?;
-        let text = rects
+        let text: String = rects
             .iter()
             .map(|area| { area.text.clone() })
             .collect::<Vec<String>>()
@@ -417,5 +471,41 @@ impl Window {
             rects[i].text = tx.to_string();
         }
         Ok(())
+    }
+}
+
+fn ocr_area(area: &Rect, screen: &Screen, default_args: &Args) -> Result<Rect, anyhow::Error> {
+    let path = format!("target/{}.png", Uuid::new_v4());
+    let screenshot = screen.capture_area(area.x, area.y, area.width as u32, area.height as u32)?;
+    screenshot.save(&path)?;
+    let image = Image::from_path(&path)?;
+    let text = rusty_tesseract::image_to_string(&image, default_args)?.trim().to_string();
+    fs::remove_file(&path)?;
+    println!("OCR: {}", text);
+    Ok(Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: area.height,
+        text,
+    })
+}
+
+fn draw_line(cr: &gtk::cairo::Context, rect: &Rect) {
+    let x = rect.x as f64;
+    let y = rect.y as f64;
+    cr.select_font_face("Noto Sans", gtk::cairo::FontSlant::Normal, gtk::cairo::FontWeight::Normal);
+    let chars: Vec<char> = rect.text.chars().collect();
+    if chars.is_empty() {
+        return;
+    }
+    let lines = rect.text.lines();
+    let font_size = (rect.height / (lines.clone().count() as i32)) as f64;
+    cr.set_font_size(font_size);
+    let mut pos_y = font_size;
+    for line in lines {
+        cr.move_to(x, y + pos_y);
+        let _ = cr.show_text(line);
+        pos_y += font_size;
     }
 }

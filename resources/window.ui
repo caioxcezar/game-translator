@@ -5,6 +5,16 @@
       <attribute name="label" translatable="yes">_Translate Image</attribute>
       <attribute name="action">win.translate-image</attribute>
     </item>
+    <item>
+      <attribute name="label" translatable="yes">_Google</attribute>
+      <attribute name="action">win.toggle-language</attribute>
+      <attribute name="target">google</attribute>
+    </item>
+    <item>
+      <attribute name="label" translatable="yes">_Deepl</attribute>
+      <attribute name="action">win.toggle-language</attribute>
+      <attribute name="target">deepl</attribute>
+    </item>
   </menu>
   <template class="ProfileWindow" parent="AdwApplicationWindow">
     <property name="title" translatable="yes">Game Translator</property>
@@ -116,10 +126,37 @@
                       </object>
                     </child>
                     <child>
-                      <object class="GtkButton">
-                        <property name="label">Start</property>
-                        <property name="tooltip-text" translatable="yes">Start</property>
-                        <property name="action-name">win.translate-page</property>
+                      <object class="GtkBox">
+                        <property name="orientation">vertical</property>
+                        <child>
+                          <object class="GtkBox">
+                            <property name="orientation">horizontal</property>
+                            <child>
+                              <object class="GtkDropDown" id="dd_ocr" />
+                            </child>
+                            <child>
+                              <object class="GtkDropDown" id="dd_translation" />
+                            </child>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkSwitch" id="switch_screen">
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkButton">
+                            <property name="label">Configure</property>
+                            <property name="tooltip-text" translatable="yes">Configure</property>
+                            <property name="action-name">win.configure-page</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkButton">
+                            <property name="label">Start</property>
+                            <property name="tooltip-text" translatable="yes">Start</property>
+                            <property name="action-name">win.translate-page</property>
+                          </object>
+                        </child>
                       </object>
                     </child>
                   </object>
@@ -132,8 +169,8 @@
           <object class="GtkStackPage">
             <property name="name">image</property>
             <property name="child">
-            <object class="GtkBox">
-              <property name="orientation">vertical</property>
+              <object class="GtkBox">
+                <property name="orientation">vertical</property>
                 <child>
                   <object class="AdwHeaderBar">
                     <binding name="show-end-title-buttons">
@@ -156,12 +193,6 @@
                 <child>
                   <object class="GtkBox">
                     <property name="orientation">horizontal</property>
-                    <child>
-                      <object class="GtkDropDown" id="dd_ocr"/>
-                    </child>
-                    <child>
-                      <object class="GtkDropDown" id="dd_translation"/>
-                    </child>
                     <child>
                       <object class="GtkButton">
                         <property name="label">Search Image</property>
@@ -204,7 +235,7 @@
                     </child>
                   </object>
                 </child>
-            </object>
+              </object>
             </property>
           </object>
         </child>

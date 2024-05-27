@@ -5,7 +5,7 @@ use adw::subclass::prelude::*;
 use gio::Settings;
 use glib::signal::Inhibit;
 use glib::subclass::InitializingObject;
-use gtk::{ gio, glib, CompositeTemplate, DrawingArea, DropDown, Entry, Picture, Stack };
+use gtk::{ gio, glib, CompositeTemplate, DrawingArea, DropDown, Entry, Picture, Stack, Switch };
 use once_cell::sync::OnceCell;
 // ANCHOR: struct
 // Object holding the state
@@ -25,6 +25,8 @@ pub struct Window {
     pub dd_translation: TemplateChild<DropDown>,
     #[template_child]
     pub translator_frame: TemplateChild<Entry>,
+    #[template_child]
+    pub switch_screen: TemplateChild<Switch>,
     pub drawing_area: DrawingArea,
     pub texts: RefCell<Vec<rect::Rect>>,
     pub use_areas: gtk::Switch,
@@ -55,7 +57,6 @@ impl ObjectImpl for Window {
     fn constructed(&self) {
         // Call "constructed" on parent
         self.parent_constructed();
-
         // Setup
         let obj = self.obj();
         obj.setup_settings();
