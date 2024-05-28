@@ -189,6 +189,25 @@ impl Window {
                 let mut y = y as i32;
                 let mut height = height as i32;
                 let mut width = width as i32;
+                let areas = window.imp().translation_areas.try_borrow_mut();
+                if areas.is_err() { return; }
+                let mut areas = areas.unwrap();
+                let mut can_add = true;
+
+                if width == 0 && height == 0 {
+                    can_add = false;
+                    areas.retain_mut(|area| x < area.x || x > area.x + area.width || y < area.y || y > area.y + area.height);
+                } else {
+                    areas.iter_mut().for_each(|area| {
+                        if x < area.x || x > area.x + area.width || y < area.y || y > area.y + area.height {
+                            return;
+                        }
+                        area.x += width;
+                        area.y += height;
+                        can_add = false;
+                    });
+                }
+
                 if height < 0 {
                     height = -height;
                     y -= height;
@@ -198,10 +217,15 @@ impl Window {
                     x -= width;
                 }
                 let new_rect = Rect { height, width, x, y, ..Default::default() };
-                let areas = window.imp().translation_areas.try_borrow_mut();
-                if areas.is_err() { return; }
-                let mut areas = areas.unwrap();
-                areas.push(new_rect);
+                
+                can_add = can_add && !areas.iter().any(|rect| {
+                    let x_overlap = value_in_range(new_rect.x, rect.x, rect.x + rect.width) || value_in_range(rect.x, new_rect.x, new_rect.x + new_rect.width);
+                    let y_overlap = value_in_range(new_rect.y, rect.y, rect.y + rect.height) || value_in_range(rect.y, new_rect.y, new_rect.y + new_rect.height);
+                    x_overlap && y_overlap
+                });
+
+                if can_add { areas.push(new_rect); }
+
                 let areas = areas.clone();
                 window.imp()
                     .drawing_area
@@ -304,8 +328,7 @@ impl Window {
         let screen = screens[0];
         let areas = self.imp().translation_areas.try_borrow()?;
         let areas = areas.clone();
-        let mut default_args = Args::default();
-        default_args.lang = lang.code();
+        let default_args = rusty_tesseract::Args { lang: lang.code(), ..Default::default() };
         let rects = areas
             .par_iter()
             .flat_map(
@@ -319,42 +342,6 @@ impl Window {
             )
             .collect::<Vec<Rect>>();
         self.imp().texts.replace(rects);
-        Ok(())
-    }
-
-    fn ocr_screen(&self) -> Result<(), anyhow::Error> {
-        let mut default_args = Args::default();
-        let screens = Screen::all()?;
-        let screen = screens[0];
-        let screenshot = screen.capture()?;
-        screenshot.save("target/current_capture.png")?;
-        let image = Image::from_path("target/current_capture.png")?;
-        let lang = self.imp().dd_ocr.selected_item().and_downcast::<OcrObject>().unwrap();
-        default_args.lang = lang.code();
-        let output = rusty_tesseract::image_to_data(&image, &default_args)?;
-        let mut texts = Vec::new();
-        let mut line: Rect = Default::default();
-        for dt in output.data {
-            if dt.conf <= 0.0 {
-                if line.text.trim().eq("") {
-                    continue;
-                }
-                line.text = line.text.trim().to_string();
-                texts.push(line.clone());
-                line = Default::default();
-                continue;
-            }
-            if line.text.trim().eq("") {
-                line.x = dt.left;
-                line.y = dt.top + dt.height;
-            }
-            if line.height < dt.height {
-                line.height = dt.height;
-            }
-            line.width += dt.width;
-            line.text.push_str(&format!("{} ", dt.text));
-        }
-        self.imp().texts.replace(texts);
         Ok(())
     }
 
@@ -525,4 +512,8 @@ fn draw_text_with_outline(cr: &gtk::cairo::Context, x: f64, y: f64, text: &str) 
     cr.move_to(x, y);
     cr.set_source_rgba(255.0, 255.0, 255.0, 1.0);
     let _ = cr.show_text(text);
+}
+
+fn value_in_range(value: i32, min: i32, max: i32) -> bool {
+    value >= min && value <= max
 }
