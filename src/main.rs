@@ -1,5 +1,7 @@
 mod ocr_object;
 mod rect;
+mod state;
+mod window_manager;
 mod translator_object;
 mod window;
 use adw::prelude::*;
@@ -30,6 +32,7 @@ fn main() -> glib::ExitCode {
 
 fn setup_shortcuts(app: &adw::Application) {
     app.set_accels_for_action("win.save", &["<Ctrl>s"]);
+    app.set_accels_for_action("win.configure-page", &["<Ctrl><Shift>t"]);
 }
 
 fn build_ui(app: &adw::Application) {

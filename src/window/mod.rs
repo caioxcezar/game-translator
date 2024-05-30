@@ -1,20 +1,8 @@
 mod imp;
-use crate::rect::Rect;
+use crate::{ rect::Rect, window_manager::sys::WindowManager };
+use crate::state::State;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gdk4_win32::windows::{
-    core::s,
-    Win32::UI::WindowsAndMessaging::{
-        FindWindowA,
-        SetWindowLongPtrA,
-        SetWindowPos,
-        GWL_EXSTYLE,
-        HWND_TOPMOST,
-        SWP_NOACTIVATE,
-        SWP_NOMOVE,
-        SWP_NOSIZE,
-    },
-};
 use gio::Settings;
 use glib::{ clone, Object };
 use gtk::{ gio, glib::{ self }, Expression, PropertyExpression };
@@ -36,6 +24,8 @@ glib::wrapper! {
         @implements gio::ActionGroup, gio::ActionMap, gtk::Accessible, gtk::Buildable,
                     gtk::ConstraintTarget, gtk::Native, gtk::Root, gtk::ShortcutManager;
 }
+
+const WINDOW_NAME: &str = "GT Overlay";
 
 impl Window {
     pub fn new(app: &adw::Application) -> Self {
@@ -73,8 +63,8 @@ impl Window {
         );
 
         self.add_simple_action(
-            "translate-page",
-            clone!(@weak self as window => move |_, _| window.translation_page())
+            "on-action",
+            clone!(@weak self as window => move |_, _| window.on_action())
         );
 
         self.add_simple_action(
@@ -180,7 +170,7 @@ impl Window {
         dialog.show(Some(self))
     }
 
-    fn set_drag_action(&self) {
+    fn setup_drag_action(&self) {
         let controller = gtk::GestureDrag::new();
         controller.connect_drag_end(
             clone!(@weak self as window => move |gesture, width, height| {
@@ -227,25 +217,28 @@ impl Window {
                 if can_add { areas.push(new_rect); }
 
                 let areas = areas.clone();
-                window.imp()
-                    .drawing_area
-                    .set_draw_func(move |_, cr, _width, _height| {
-                        cr.set_source_rgba(250.0, 0.0, 250.0, 1.0);
-                        areas.iter().for_each(|area| {
-                            let ret = gtk::gdk::Rectangle::new(area.x, area.y, area.width, area.height);
-                            cr.add_rectangle(&ret);
-                        });
-                        cr.stroke().expect("Invalid cairo surface state");
-                    });
+                window.draw_rectagles(areas);
             })
         );
         self.imp().drawing_area.add_controller(controller);
     }
 
+    fn draw_rectagles(&self, areas: Vec<Rect>) {
+        self.imp().drawing_area.set_draw_func(move |_, cr, _width, _height| {
+            cr.set_source_rgba(250.0, 0.0, 250.0, 1.0);
+            areas.iter().for_each(|area| {
+                let ret = gtk::gdk::Rectangle::new(area.x, area.y, area.width, area.height);
+                cr.add_rectangle(&ret);
+            });
+            cr.stroke().expect("Invalid cairo surface state");
+        });
+    }
+
     fn open_overlay_page(&self, intangible: bool) {
+        WindowManager::close_window(WINDOW_NAME);
         let page = gtk::Window
             ::builder()
-            .title("GT Overlay")
+            .title(WINDOW_NAME)
             .name("translation-page")
             .maximized(true)
             .decorated(false)
@@ -253,40 +246,92 @@ impl Window {
             .css_classes(["overlay"].to_vec())
             .build();
         page.set_visible(true);
-        unsafe {
-            let hwnd = FindWindowA(s!("gdkSurfaceToplevel"), s!("GT Overlay"));
-            // WS_EX_TRANSPARENT = 32
-            // WS_EX_LAYERED = 524288
-            let dwnewlong = if intangible { 32 | 524288 } else { 32 };
-            let _ = SetWindowLongPtrA(hwnd, GWL_EXSTYLE, dwnewlong);
-            let _ = SetWindowPos(
-                hwnd,
-                HWND_TOPMOST,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE
-            );
-        }
+        WindowManager::set_window_translucent(WINDOW_NAME, intangible);
+    }
+
+    fn on_action(&self) {
+        let state = self.imp().state.borrow().clone();
+        let state = match state {
+            State::Stopped | State::Paused => self.start(),
+            State::Started => self.stop(),
+        };
+        self.imp().state.replace(state);
+    }
+
+    fn start(&self) -> State {
+        self.text_overlay(false);
+        self.imp().action_button.set_label("Stop");
+        State::Started
+    }
+
+    fn stop(&self) -> State {
+        WindowManager::close_window(WINDOW_NAME);
+        self.imp().action_button.set_label("Start");
+        State::Stopped
     }
 
     fn configure_page(&self) {
         self.open_overlay_page(false);
-        self.set_drag_action();
+        let areas = self.imp().translation_areas.try_borrow();
+        if areas.is_err() {
+            return;
+        }
+        self.draw_rectagles(areas.unwrap().clone());
+        self.imp().action_button.set_label("Start");
+        self.imp().state.replace(State::Paused);
     }
 
-    fn translation_page(&self) {
+    fn text_overlay(&self, translate: bool) {
+        self.open_overlay_page(true);
         let lang = self.imp().dd_ocr.selected_item().and_downcast::<OcrObject>().unwrap();
         let target = self
             .imp()
             .dd_translation.selected_item()
             .and_downcast::<TranslatorObject>()
             .unwrap();
-        let _ = self.ocr_areas(&lang);
-        let _ = self.translate_from_ocr(&lang, &target);
+        let _ = if self.imp().chk_full_screen.is_active() {
+            self.ocr_screen(&lang)
+        } else {
+            self.ocr_areas(&lang)
+        };
+        if translate {
+            let _ = self.translate_from_ocr(&lang, &target);
+        }
         let _ = self.draw_text();
-        self.open_overlay_page(true);
+    }
+
+    fn ocr_screen(&self, lang: &OcrObject) -> Result<(), anyhow::Error> {
+        let default_args = rusty_tesseract::Args { lang: lang.code(), ..Default::default() };
+        let screens = Screen::all()?;
+        let screen = screens[0];
+        let screenshot = screen.capture()?;
+        screenshot.save("target/current_capture.png")?;
+        let image = Image::from_path("target/current_capture.png")?;
+        let output = rusty_tesseract::image_to_data(&image, &default_args)?;
+        let mut texts = Vec::new();
+        let mut line: Rect = Default::default();
+        for dt in output.data {
+            if dt.conf <= 0.0 {
+                if line.text.trim().eq("") {
+                    continue;
+                }
+                line.text = line.text.trim().to_string();
+                texts.push(line.clone());
+                line = Default::default();
+                continue;
+            }
+            if line.text.trim().eq("") {
+                line.x = dt.left;
+                line.y = dt.top;
+            }
+            if line.height < dt.height {
+                line.height = dt.height;
+            }
+            line.width += dt.width;
+            line.text.push_str(&format!("{} ", dt.text));
+        }
+        self.imp().texts.replace(texts);
+        Ok(())
     }
 
     fn search_image(&self) {
@@ -436,6 +481,9 @@ impl Window {
     ) -> Result<(), anyhow::Error> {
         let ocr = OcrData { code: lang.code(), language: lang.language() };
         let mut rects = self.imp().texts.try_borrow_mut()?;
+        if rects.is_empty() {
+            return Ok(());
+        }
         let text = rects
             .iter()
             .map(|rect| rect.text.clone())
@@ -470,13 +518,7 @@ fn ocr_area(area: &Rect, screen: &Screen, default_args: &Args) -> Result<Rect, a
     let image = Image::from_path(&path)?;
     let text = rusty_tesseract::image_to_string(&image, default_args)?.trim().to_string();
     fs::remove_file(&path)?;
-    Ok(Rect {
-        x: area.x,
-        y: area.y,
-        width: area.width,
-        height: area.height,
-        text,
-    })
+    Ok(Rect { text, ..area.clone() })
 }
 
 fn draw_line(cr: &gtk::cairo::Context, rect: &Rect) {

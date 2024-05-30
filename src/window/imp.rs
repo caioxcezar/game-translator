@@ -1,11 +1,23 @@
 use std::cell::RefCell;
 
 use crate::rect;
+use crate::state;
 use adw::subclass::prelude::*;
 use gio::Settings;
 use glib::signal::Inhibit;
 use glib::subclass::InitializingObject;
-use gtk::{ gio, glib, CompositeTemplate, DrawingArea, DropDown, Entry, Picture, Stack, Switch };
+use gtk::{
+    gio,
+    glib,
+    CompositeTemplate,
+    DrawingArea,
+    DropDown,
+    Entry,
+    Picture,
+    Stack,
+    CheckButton,
+    Button,
+};
 use once_cell::sync::OnceCell;
 // ANCHOR: struct
 // Object holding the state
@@ -26,7 +38,10 @@ pub struct Window {
     #[template_child]
     pub translator_frame: TemplateChild<Entry>,
     #[template_child]
-    pub switch_screen: TemplateChild<Switch>,
+    pub chk_full_screen: TemplateChild<CheckButton>,
+    #[template_child]
+    pub action_button: TemplateChild<Button>,
+    pub state: RefCell<state::State>,
     pub drawing_area: DrawingArea,
     pub texts: RefCell<Vec<rect::Rect>>,
     pub use_areas: gtk::Switch,
@@ -62,6 +77,7 @@ impl ObjectImpl for Window {
         obj.setup_settings();
         obj.setup_actions();
         obj.setup_data();
+        obj.setup_drag_action();
     }
 }
 // ANCHOR_END: object_impl

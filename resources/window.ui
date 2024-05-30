@@ -140,7 +140,9 @@
                           </object>
                         </child>
                         <child>
-                          <object class="GtkSwitch" id="switch_screen">
+                          <object class="GtkCheckButton" id="chk_full_screen">
+                            <property name="label">Translate whole screen</property>
+                            <property name="active">false</property>
                           </object>
                         </child>
                         <child>
@@ -151,10 +153,10 @@
                           </object>
                         </child>
                         <child>
-                          <object class="GtkButton">
+                          <object class="GtkButton" id="action_button">
                             <property name="label">Start</property>
                             <property name="tooltip-text" translatable="yes">Start</property>
-                            <property name="action-name">win.translate-page</property>
+                            <property name="action-name">win.on-action</property>
                           </object>
                         </child>
                       </object>
