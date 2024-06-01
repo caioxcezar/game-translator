@@ -1,7 +1,14 @@
 mod imp;
 
+use std::fs;
+
 use glib::Object;
 use gtk::glib;
+use rusty_tesseract::Image;
+use crate::rect::Rect;
+use screenshots::Screen;
+use uuid::Uuid;
+use rayon::prelude::*;
 
 use crate::translator_object::TranslatorData;
 
@@ -12,19 +19,21 @@ glib::wrapper! {
 impl OcrObject {
     pub fn new(code: String) -> Self {
         let land_data = OcrData::new(&code);
-        Object::builder()
-            .property("code", code)
-            .property("language", land_data.language)
-            .build()
+        Object::builder().property("code", code).property("language", land_data.language).build()
     }
 }
 #[derive(Default, Clone)]
 pub struct OcrData {
     pub code: String,
     pub language: String,
+    pub screen: usize,
 }
 
 impl OcrData {
+    fn get_screen(&self) -> Result<Screen, anyhow::Error> {
+        let screens = Screen::all()?;
+        Ok(screens[self.screen])
+    }
     pub fn to_translator(&self) -> TranslatorData {
         let code = match self.code.as_str() {
             "eng" => "en",
@@ -194,6 +203,91 @@ impl OcrData {
         OcrData {
             code: code.to_owned(),
             language: language.to_owned(),
+            screen: 0,
         }
+    }
+    pub fn ocr_areas(&self, areas: &Vec<Rect>) -> Result<Vec<Rect>, anyhow::Error> {
+        let default_args = rusty_tesseract::Args {
+            lang: self.code.to_owned(),
+            ..Default::default()
+        };
+        let _screen = self.get_screen()?;
+        let rects = areas
+            .par_iter()
+            .flat_map(
+                |area| -> Result<Rect, anyhow::Error> {
+                    let result = self.ocr_area(area, &_screen, &default_args);
+                    if result.is_err() {
+                        println!("Error: {:?}", &result);
+                    }
+                    result
+                }
+            )
+            .collect::<Vec<Rect>>();
+        Ok(rects)
+    }
+    pub fn ocr_area(
+        &self,
+        area: &Rect,
+        screen: &Screen,
+        default_args: &rusty_tesseract::Args
+    ) -> Result<Rect, anyhow::Error> {
+        let path = format!("target/{}.png", Uuid::new_v4());
+        let screenshot = screen.capture_area(
+            area.x,
+            area.y,
+            area.width as u32,
+            area.height as u32
+        )?;
+        screenshot.save(&path)?;
+        let image = Image::from_path(&path)?;
+        let text = rusty_tesseract::image_to_string(&image, default_args)?.trim().to_string();
+        fs::remove_file(&path)?;
+        Ok(Rect { text, ..area.clone() })
+    }
+    pub fn ocr_screen(&self) -> Result<Vec<Rect>, anyhow::Error> {
+        let default_args = rusty_tesseract::Args {
+            lang: self.code.to_owned(),
+            ..Default::default()
+        };
+        let screens = Screen::all()?;
+        let screen = screens[0];
+        let screenshot = screen.capture()?;
+        screenshot.save("target/current_capture.png")?;
+        let image = Image::from_path("target/current_capture.png")?;
+        let output = rusty_tesseract::image_to_data(&image, &default_args)?;
+        let mut texts = Vec::new();
+        let mut line: Rect = Default::default();
+        for dt in output.data {
+            if dt.conf <= 0.0 {
+                if line.text.trim().eq("") {
+                    continue;
+                }
+                line.text = line.text.trim().to_string();
+                texts.push(line.clone());
+                line = Default::default();
+                continue;
+            }
+            if line.text.trim().eq("") {
+                line.x = dt.left;
+                line.y = dt.top;
+            }
+            if line.height < dt.height {
+                line.height = dt.height;
+            }
+            line.width += dt.width;
+            line.text.push_str(&format!("{} ", dt.text));
+        }
+        Ok(texts)
+    }
+
+    pub fn ocr_image(&self, path: &str) -> Result<String, anyhow::Error> {
+        let default_args = rusty_tesseract::Args {
+            lang: self.code.to_owned(),
+            ..rusty_tesseract::Args::default()
+        };
+        let image = Image::from_path(path)?;
+        let text = rusty_tesseract::image_to_string(&image, &default_args)?;
+        Ok(text)
     }
 }

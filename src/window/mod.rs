@@ -6,17 +6,11 @@ use adw::subclass::prelude::*;
 use gio::Settings;
 use glib::{ clone, Object };
 use gtk::{ gio, glib::{ self }, Expression, PropertyExpression };
-use headless_chrome::Browser;
-use rusty_tesseract::{ Args, Image };
-use screenshots::Screen;
-use std::fs;
 use crate::{
     ocr_object::{ OcrData, OcrObject },
     translator_object::{ TranslatorData, TranslatorObject },
     APP_ID,
 };
-use uuid::Uuid;
-use rayon::prelude::*;
 
 glib::wrapper! {
     pub struct Window(ObjectSubclass<imp::Window>)
@@ -26,6 +20,7 @@ glib::wrapper! {
 }
 
 const WINDOW_NAME: &str = "GT Overlay";
+const SIGNAL_STATE: &str = "state-changed";
 
 impl Window {
     pub fn new(app: &adw::Application) -> Self {
@@ -44,7 +39,33 @@ impl Window {
         self.imp().settings.get().expect("`settings` should be set in `setup_settings`.")
     }
 
+    fn current_state(&self) -> State {
+        self.imp().state.borrow().clone()
+    }
+
+    fn ocr_data(&self) -> Result<OcrData, anyhow::Error> {
+        let lang = self.imp().dd_ocr.selected_item().and_downcast::<OcrObject>();
+        if let Some(lang) = lang {
+            return Ok(OcrData { code: lang.code(), language: lang.language(), screen: 0 });
+        }
+        Err(anyhow::anyhow!("No OCR language selected"))
+    }
+
+    fn translator_data(&self) -> Result<TranslatorData, anyhow::Error> {
+        let lang = self.imp().dd_translation.selected_item().and_downcast::<TranslatorObject>();
+        if let Some(lang) = lang {
+            return Ok(TranslatorData { code: lang.code(), language: lang.language() });
+        }
+        Err(anyhow::anyhow!("No translation language selected"))
+    }
+
+    fn texts(&self) -> Result<Vec<Rect>, anyhow::Error> {
+        Ok(self.imp().texts.try_borrow()?.clone())
+    }
+
     fn setup_actions(&self) {
+        let _ = gtk::SignalAction::new(SIGNAL_STATE);
+
         self.add_simple_action(
             "new-profile",
             clone!(@weak self as window => move |_, _| window.navigate("main"))
@@ -250,8 +271,7 @@ impl Window {
     }
 
     fn on_action(&self) {
-        let state = self.imp().state.borrow().clone();
-        let state = match state {
+        let state = match self.current_state() {
             State::Stopped | State::Paused => self.start(),
             State::Started => self.stop(),
         };
@@ -259,8 +279,11 @@ impl Window {
     }
 
     fn start(&self) -> State {
-        self.text_overlay(false);
+        self.open_overlay_page(true);
         self.imp().action_button.set_label("Stop");
+        if let Err(err) = self.text_overlay(true) {
+            self.dialog("Text Overlay Error", &err.to_string());
+        }
         State::Started
     }
 
@@ -281,56 +304,21 @@ impl Window {
         self.imp().state.replace(State::Paused);
     }
 
-    fn text_overlay(&self, translate: bool) {
-        self.open_overlay_page(true);
-        let lang = self.imp().dd_ocr.selected_item().and_downcast::<OcrObject>().unwrap();
-        let target = self
-            .imp()
-            .dd_translation.selected_item()
-            .and_downcast::<TranslatorObject>()
-            .unwrap();
-        let _ = if self.imp().chk_full_screen.is_active() {
-            self.ocr_screen(&lang)
+    fn text_overlay(&self, translate: bool) -> Result<(), anyhow::Error> {
+        let ocr = self.ocr_data()?;
+        let translator = self.translator_data()?;
+        let texts = (if self.imp().chk_full_screen.is_active() {
+            ocr.ocr_screen()
         } else {
-            self.ocr_areas(&lang)
-        };
+            let areas = self.imp().translation_areas.try_borrow()?;
+            ocr.ocr_areas(&areas)
+        })?;
         if translate {
-            let _ = self.translate_from_ocr(&lang, &target);
+            let provider = self.settings().string("tra-provider");
+            let texts = translator.translate_from_ocr(&ocr, provider.as_str(), texts)?;
+            self.imp().texts.replace(texts);
         }
         let _ = self.draw_text();
-    }
-
-    fn ocr_screen(&self, lang: &OcrObject) -> Result<(), anyhow::Error> {
-        let default_args = rusty_tesseract::Args { lang: lang.code(), ..Default::default() };
-        let screens = Screen::all()?;
-        let screen = screens[0];
-        let screenshot = screen.capture()?;
-        screenshot.save("target/current_capture.png")?;
-        let image = Image::from_path("target/current_capture.png")?;
-        let output = rusty_tesseract::image_to_data(&image, &default_args)?;
-        let mut texts = Vec::new();
-        let mut line: Rect = Default::default();
-        for dt in output.data {
-            if dt.conf <= 0.0 {
-                if line.text.trim().eq("") {
-                    continue;
-                }
-                line.text = line.text.trim().to_string();
-                texts.push(line.clone());
-                line = Default::default();
-                continue;
-            }
-            if line.text.trim().eq("") {
-                line.x = dt.left;
-                line.y = dt.top;
-            }
-            if line.height < dt.height {
-                line.height = dt.height;
-            }
-            line.width += dt.width;
-            line.text.push_str(&format!("{} ", dt.text));
-        }
-        self.imp().texts.replace(texts);
         Ok(())
     }
 
@@ -348,16 +336,49 @@ impl Window {
             clone!(@weak self as window => move |result| {
                 if result.is_err() { return }
                 let file = result.unwrap();
-                let path = file.path().unwrap();
-                window.ocr_image(path.to_str().unwrap());
-                window.imp().picture.set_file(Some(&file))
+                let _ = window.ocr_from_img(&file);
             })
         );
+    }
+
+    fn ocr_from_img(&self, file: &gio::File) -> Result<(), anyhow::Error> {
+        let path = file.path();
+
+        if file.path().is_none() {
+            return Err(anyhow::anyhow!("No image selected"));
+        }
+
+        let path = path.unwrap();
+        let ocr = self.ocr_data()?;
+        let translator = self.translator_data()?;
+        let text = ocr.ocr_image(path.to_str().unwrap())?;
+        let provider = self.settings().string("tra-provider");
+
+        self.imp().ocr_frame.set_text(&text);
+        let translated_text = translator.translate(
+            &ocr.to_translator().code,
+            provider.as_str(),
+            &text
+        );
+
+        match translated_text {
+            Ok(txt) => {
+                self.imp().translator_frame.set_text(&txt);
+            }
+            Err(err) => {
+                self.dialog("Translation error", &err.to_string());
+            }
+        }
+
+        self.imp().picture.set_file(Some(file));
+
+        Ok(())
     }
 
     fn draw_text(&self) -> Result<(), anyhow::Error> {
         let rects = self.imp().texts.try_borrow_mut()?;
         let rects = rects.clone();
+
         self.imp().drawing_area.set_draw_func(move |_, cr, _width, _height| {
             cr.set_antialias(gtk::cairo::Antialias::Fast);
             for rect in rects.iter() {
@@ -367,158 +388,6 @@ impl Window {
         });
         Ok(())
     }
-
-    fn ocr_areas(&self, lang: &OcrObject) -> Result<(), anyhow::Error> {
-        let screens = Screen::all()?;
-        let screen = screens[0];
-        let areas = self.imp().translation_areas.try_borrow()?;
-        let areas = areas.clone();
-        let default_args = rusty_tesseract::Args { lang: lang.code(), ..Default::default() };
-        let rects = areas
-            .par_iter()
-            .flat_map(
-                |area| -> Result<Rect, anyhow::Error> {
-                    let result = ocr_area(area, &screen, &default_args);
-                    if result.is_err() {
-                        println!("Error: {:?}", &result);
-                    }
-                    result
-                }
-            )
-            .collect::<Vec<Rect>>();
-        self.imp().texts.replace(rects);
-        Ok(())
-    }
-
-    fn ocr_image(&self, path: &str) {
-        let mut default_args = Args::default();
-        let image = Image::from_path(path);
-        if let Ok(image) = image {
-            let lang = self.imp().dd_ocr.selected_item().and_downcast::<OcrObject>().unwrap();
-            default_args.lang = lang.code();
-            let ocr = OcrData { code: lang.code(), language: lang.language() };
-            let text = rusty_tesseract::image_to_string(&image, &default_args).unwrap();
-
-            self.imp().ocr_frame.set_text(&text);
-            self.translate(&ocr.to_translator().code, &text);
-        }
-    }
-
-    fn translate_from_deepl(
-        &self,
-        target: &str,
-        source: &str,
-        text: &str
-    ) -> Result<String, anyhow::Error> {
-        let path = "//*[@id=\"textareasContainer\"]/div[3]/section/div[1]/d-textarea/div";
-        let url = format!(
-            "https://deepl.com/en/translator#{}/{}/{}",
-            source,
-            target,
-            text.replace(' ', "%20")
-        );
-        let browser = Browser::default()?;
-        let tab = browser.new_tab()?;
-        tab.navigate_to(&url)?;
-        tab.wait_until_navigated()?;
-        let mut translated_text = "".to_owned();
-        for element in tab.wait_for_elements_by_xpath(path)?.iter() {
-            if let Ok(txt) = element.get_inner_text() {
-                translated_text.push_str(&txt);
-            }
-        }
-        Ok(translated_text)
-    }
-
-    fn translate_from_google(
-        &self,
-        target: &str,
-        source: &str,
-        text: &str
-    ) -> Result<String, anyhow::Error> {
-        let path = "//*[@jsname=\"W297wb\"]";
-        let url = format!(
-            "https://translate.google.com.br/?sl={}&tl={}&text=${}&op=translate",
-            source,
-            target,
-            text.replace(' ', "%20")
-        );
-        let browser = Browser::default()?;
-        let tab = browser.new_tab()?;
-        tab.navigate_to(&url)?;
-        tab.wait_until_navigated()?;
-        let mut translated_text = "".to_owned();
-        for element in tab.wait_for_elements_by_xpath(path)?.iter() {
-            if let Ok(txt) = element.get_inner_text() {
-                translated_text.push_str(&txt);
-            }
-        }
-        Ok(translated_text)
-    }
-
-    fn translate(&self, source: &str, text: &str) {
-        let target = self
-            .imp()
-            .dd_translation.selected_item()
-            .and_downcast::<TranslatorObject>()
-            .unwrap();
-        let provider = self.settings().string("tra-provider");
-        let translated_text = match provider.as_str() {
-            "google" =>
-                self.translate_from_google(&target.code(), source, &urlencoding::encode(text)),
-            _ => self.translate_from_deepl(&target.code(), source, &urlencoding::encode(text)),
-        };
-        match translated_text {
-            Ok(txt) => { self.imp().translator_frame.set_text(&txt) }
-            Err(err) => { self.dialog("Translation error", &err.to_string()) }
-        }
-    }
-
-    fn translate_from_ocr(
-        &self,
-        lang: &OcrObject,
-        target: &TranslatorObject
-    ) -> Result<(), anyhow::Error> {
-        let ocr = OcrData { code: lang.code(), language: lang.language() };
-        let mut rects = self.imp().texts.try_borrow_mut()?;
-        if rects.is_empty() {
-            return Ok(());
-        }
-        let text = rects
-            .iter()
-            .map(|rect| rect.text.clone())
-            .collect::<Vec<String>>()
-            .join("\n=+=\n");
-        let text = (match self.settings().string("tra-provider").as_str() {
-            "deepl" =>
-                self.translate_from_deepl(
-                    &target.code(),
-                    &ocr.to_translator().code,
-                    &urlencoding::encode(&text)
-                ),
-            _ =>
-                self.translate_from_google(
-                    &target.code(),
-                    &ocr.to_translator().code,
-                    &urlencoding::encode(&text)
-                ),
-        })?;
-        let texts = text.split("\n=+=\n").collect::<Vec<&str>>();
-        for (i, tx) in texts.iter().enumerate() {
-            rects[i].text = tx.to_string();
-        }
-        Ok(())
-    }
-}
-
-fn ocr_area(area: &Rect, screen: &Screen, default_args: &Args) -> Result<Rect, anyhow::Error> {
-    let path = format!("target/{}.png", Uuid::new_v4());
-    let screenshot = screen.capture_area(area.x, area.y, area.width as u32, area.height as u32)?;
-    screenshot.save(&path)?;
-    let image = Image::from_path(&path)?;
-    let text = rusty_tesseract::image_to_string(&image, default_args)?.trim().to_string();
-    fs::remove_file(&path)?;
-    Ok(Rect { text, ..area.clone() })
 }
 
 fn draw_line(cr: &gtk::cairo::Context, rect: &Rect) {
