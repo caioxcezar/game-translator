@@ -6,18 +6,7 @@ use adw::subclass::prelude::*;
 use gio::Settings;
 use glib::signal::Inhibit;
 use glib::subclass::InitializingObject;
-use gtk::{
-    gio,
-    glib,
-    CompositeTemplate,
-    DrawingArea,
-    DropDown,
-    Entry,
-    Picture,
-    Stack,
-    CheckButton,
-    Button,
-};
+use gtk::{ gio, glib, CompositeTemplate, DrawingArea, DropDown, Stack, CheckButton, Button };
 use once_cell::sync::OnceCell;
 // ANCHOR: struct
 // Object holding the state
@@ -28,21 +17,17 @@ pub struct Window {
     #[template_child]
     pub stack: TemplateChild<Stack>,
     #[template_child]
-    pub picture: TemplateChild<Picture>,
-    #[template_child]
-    pub ocr_frame: TemplateChild<Entry>,
-    #[template_child]
     pub dd_screen: TemplateChild<DropDown>,
     #[template_child]
     pub dd_ocr: TemplateChild<DropDown>,
     #[template_child]
     pub dd_translation: TemplateChild<DropDown>,
     #[template_child]
-    pub translator_frame: TemplateChild<Entry>,
-    #[template_child]
     pub chk_full_screen: TemplateChild<CheckButton>,
     #[template_child]
     pub action_button: TemplateChild<Button>,
+    #[template_child]
+    pub config_button: TemplateChild<Button>,
     pub state: RefCell<state::State>,
     pub drawing_area: DrawingArea,
     pub use_areas: gtk::Switch,

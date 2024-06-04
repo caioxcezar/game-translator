@@ -80,6 +80,30 @@ impl Window {
     }
 
     fn setup_actions(&self) {
+        self.imp().chk_full_screen.connect_toggled(
+            clone!(@weak self as window => move |button| {
+            window.imp().config_button.set_sensitive(!button.is_active());
+        })
+        );
+
+        self.imp().dd_translation.connect_selected_item_notify(
+            clone!(@weak self as window => move |drop_down| {
+            let tra_obj = drop_down.selected_item().and_downcast::<TranslatorObject>();
+            if let Some(tra_obj) = tra_obj {
+                let _ = window.settings().set("tra-lang", tra_obj.code());
+            };
+        })
+        );
+
+        self.imp().dd_ocr.connect_selected_item_notify(
+            clone!(@weak self as window => move |drop_down| {
+            let ocr_obj = drop_down.selected_item().and_downcast::<OcrObject>();
+            if let Some(ocr_obj) = ocr_obj {
+                let _ = window.settings().set("ocr-lang", ocr_obj.code());
+            };
+        })
+        );
+
         self.add_simple_action(
             "new-profile",
             clone!(@weak self as window => move |_, _| window.navigate("main"))
@@ -91,11 +115,6 @@ impl Window {
         );
 
         self.set_language_action();
-
-        self.add_simple_action(
-            "search-image",
-            clone!(@weak self as window => move |_, _| window.search_image())
-        );
 
         self.add_simple_action(
             "on-action",
@@ -152,16 +171,20 @@ impl Window {
     }
 
     fn setup_data(&self) {
-        let ocr_lang = self.settings().uint("ocr-lang");
-        let tra_lang = self.settings().uint("tra-lang");
+        let ocr_lang = self.settings().string("ocr-lang");
+        let tra_lang = self.settings().string("tra-lang");
 
         let languages = rusty_tesseract::get_tesseract_langs();
         match languages {
             Ok(values) => {
                 let list = gio::ListStore::new(OcrObject::static_type());
-                for lang in values {
-                    list.append(&OcrObject::new(lang));
+                for lang in &values {
+                    list.append(&OcrObject::new(lang.to_string()));
                 }
+                let id = values
+                    .iter()
+                    .position(|value| { value.eq(&ocr_lang) })
+                    .unwrap_or(0);
                 let expression = PropertyExpression::new(
                     OcrObject::static_type(),
                     Expression::NONE,
@@ -169,7 +192,7 @@ impl Window {
                 );
                 self.imp().dd_ocr.set_expression(Some(expression));
                 self.imp().dd_ocr.set_model(Some(&list));
-                self.imp().dd_ocr.set_selected(ocr_lang);
+                self.imp().dd_ocr.set_selected(id as u32);
             }
             Err(value) =>
                 self.dialog(
@@ -178,9 +201,14 @@ impl Window {
                 ),
         }
         let list = gio::ListStore::new(TranslatorObject::static_type());
-        for lang in TranslatorData::all_languages() {
-            list.append(&TranslatorObject::new(lang.code));
+        let all_langs = TranslatorData::all_languages();
+        for lang in &all_langs {
+            list.append(&TranslatorObject::new(lang.code.to_string()));
         }
+        let id = all_langs
+            .iter()
+            .position(|value| { value.code.eq(&tra_lang) })
+            .unwrap_or(0);
         let expression = PropertyExpression::new(
             TranslatorObject::static_type(),
             Expression::NONE,
@@ -188,7 +216,7 @@ impl Window {
         );
         self.imp().dd_translation.set_expression(Some(expression));
         self.imp().dd_translation.set_model(Some(&list));
-        self.imp().dd_translation.set_selected(tra_lang);
+        self.imp().dd_translation.set_selected(id as u32);
 
         let list = gio::ListStore::new(ScreenObject::static_type());
         if let Ok(windows) = xcap::Window::all() {
@@ -371,59 +399,6 @@ impl Window {
                 glib::Continue(false)
             })
         );
-
-        Ok(())
-    }
-
-    fn search_image(&self) {
-        let dd_ocr = self.imp().dd_ocr.selected();
-        let dd_translation = self.imp().dd_translation.selected();
-        let _ = self.settings().set("ocr-lang", dd_ocr);
-        let _ = self.settings().set("tra-lang", dd_translation);
-
-        let file_dialog = gtk::FileDialog::builder().title("Select a image to translate").build();
-
-        file_dialog.open(
-            Some(self),
-            gio::Cancellable::NONE,
-            clone!(@weak self as window => move |result| {
-                if result.is_err() { return }
-                let file = result.unwrap();
-                let _ = window.ocr_from_img(&file);
-            })
-        );
-    }
-
-    fn ocr_from_img(&self, file: &gio::File) -> Result<(), anyhow::Error> {
-        let path = file.path();
-
-        if file.path().is_none() {
-            return Err(anyhow::anyhow!("No image selected"));
-        }
-
-        let path = path.unwrap();
-        let ocr = self.ocr_data()?;
-        let translator = self.translator_data()?;
-        let text = ocr.ocr_image(path.to_str().unwrap())?;
-        let provider = self.settings().string("tra-provider");
-
-        self.imp().ocr_frame.set_text(&text);
-        let translated_text = translator.translate(
-            &ocr.to_translator().code,
-            provider.as_str(),
-            &text
-        );
-
-        match translated_text {
-            Ok(txt) => {
-                self.imp().translator_frame.set_text(&txt);
-            }
-            Err(err) => {
-                self.dialog("Translation error", &err.to_string());
-            }
-        }
-
-        self.imp().picture.set_file(Some(file));
 
         Ok(())
     }
