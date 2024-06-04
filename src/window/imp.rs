@@ -32,6 +32,8 @@ pub struct Window {
     #[template_child]
     pub ocr_frame: TemplateChild<Entry>,
     #[template_child]
+    pub dd_screen: TemplateChild<DropDown>,
+    #[template_child]
     pub dd_ocr: TemplateChild<DropDown>,
     #[template_child]
     pub dd_translation: TemplateChild<DropDown>,
@@ -43,7 +45,6 @@ pub struct Window {
     pub action_button: TemplateChild<Button>,
     pub state: RefCell<state::State>,
     pub drawing_area: DrawingArea,
-    pub texts: RefCell<Vec<rect::Rect>>,
     pub use_areas: gtk::Switch,
     pub translation_areas: RefCell<Vec<rect::Rect>>,
 }

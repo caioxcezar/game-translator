@@ -1,13 +1,9 @@
 mod imp;
 
-use std::fs;
-
 use glib::Object;
 use gtk::glib;
 use rusty_tesseract::Image;
-use crate::rect::Rect;
-use screenshots::Screen;
-use uuid::Uuid;
+use crate::{ rect::Rect, screen_object::ScreenData };
 use rayon::prelude::*;
 
 use crate::translator_object::TranslatorData;
@@ -26,14 +22,9 @@ impl OcrObject {
 pub struct OcrData {
     pub code: String,
     pub language: String,
-    pub screen: usize,
 }
 
 impl OcrData {
-    fn get_screen(&self) -> Result<Screen, anyhow::Error> {
-        let screens = Screen::all()?;
-        Ok(screens[self.screen])
-    }
     pub fn to_translator(&self) -> TranslatorData {
         let code = match self.code.as_str() {
             "eng" => "en",
@@ -69,6 +60,7 @@ impl OcrData {
         };
         TranslatorData::new(code)
     }
+
     pub fn new(code: &str) -> OcrData {
         let language: &str = match code {
             "afr" => "Afrikaans",
@@ -203,20 +195,23 @@ impl OcrData {
         OcrData {
             code: code.to_owned(),
             language: language.to_owned(),
-            screen: 0,
         }
     }
-    pub fn ocr_areas(&self, areas: &Vec<Rect>) -> Result<Vec<Rect>, anyhow::Error> {
+
+    pub fn ocr_areas(
+        &self,
+        areas: &Vec<Rect>,
+        screen: &ScreenData
+    ) -> Result<Vec<Rect>, anyhow::Error> {
         let default_args = rusty_tesseract::Args {
             lang: self.code.to_owned(),
             ..Default::default()
         };
-        let _screen = self.get_screen()?;
         let rects = areas
             .par_iter()
             .flat_map(
                 |area| -> Result<Rect, anyhow::Error> {
-                    let result = self.ocr_area(area, &_screen, &default_args);
+                    let result = self.ocr_area(area, &default_args, screen);
                     if result.is_err() {
                         println!("Error: {:?}", &result);
                     }
@@ -226,36 +221,34 @@ impl OcrData {
             .collect::<Vec<Rect>>();
         Ok(rects)
     }
+
     pub fn ocr_area(
         &self,
         area: &Rect,
-        screen: &Screen,
-        default_args: &rusty_tesseract::Args
+        default_args: &rusty_tesseract::Args,
+        screen: &ScreenData
     ) -> Result<Rect, anyhow::Error> {
-        let path = format!("target/{}.png", Uuid::new_v4());
-        let screenshot = screen.capture_area(
-            area.x,
-            area.y,
+        let path = screen.capture_area(
+            area.x as u32,
+            area.y as u32,
             area.width as u32,
             area.height as u32
         )?;
-        screenshot.save(&path)?;
         let image = Image::from_path(&path)?;
         let text = rusty_tesseract::image_to_string(&image, default_args)?.trim().to_string();
-        fs::remove_file(&path)?;
+        screen.remove(&path)?;
         Ok(Rect { text, ..area.clone() })
     }
-    pub fn ocr_screen(&self) -> Result<Vec<Rect>, anyhow::Error> {
+
+    pub fn ocr_screen(&self, screen: &ScreenData) -> Result<Vec<Rect>, anyhow::Error> {
         let default_args = rusty_tesseract::Args {
             lang: self.code.to_owned(),
             ..Default::default()
         };
-        let screens = Screen::all()?;
-        let screen = screens[0];
-        let screenshot = screen.capture()?;
-        screenshot.save("target/current_capture.png")?;
-        let image = Image::from_path("target/current_capture.png")?;
+        let path = screen.capture()?;
+        let image = Image::from_path(&path)?;
         let output = rusty_tesseract::image_to_data(&image, &default_args)?;
+        screen.remove(&path)?;
         let mut texts = Vec::new();
         let mut line: Rect = Default::default();
         for dt in output.data {

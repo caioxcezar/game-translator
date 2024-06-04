@@ -1,9 +1,11 @@
 mod ocr_object;
+mod translator_object;
+mod screen_object;
 mod rect;
 mod state;
 mod window_manager;
-mod translator_object;
 mod window;
+
 use adw::prelude::*;
 use gtk::{ gio, glib };
 use window::Window;

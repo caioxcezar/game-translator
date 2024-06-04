@@ -1,4 +1,5 @@
 mod imp;
+use crate::screen_object::{ ScreenData, ScreenObject };
 use crate::{ rect::Rect, window_manager::sys::WindowManager };
 use crate::state::State;
 use adw::prelude::*;
@@ -11,6 +12,7 @@ use crate::{
     translator_object::{ TranslatorData, TranslatorObject },
     APP_ID,
 };
+use std::thread;
 
 glib::wrapper! {
     pub struct Window(ObjectSubclass<imp::Window>)
@@ -20,7 +22,6 @@ glib::wrapper! {
 }
 
 const WINDOW_NAME: &str = "GT Overlay";
-const SIGNAL_STATE: &str = "state-changed";
 
 impl Window {
     pub fn new(app: &adw::Application) -> Self {
@@ -46,9 +47,24 @@ impl Window {
     fn ocr_data(&self) -> Result<OcrData, anyhow::Error> {
         let lang = self.imp().dd_ocr.selected_item().and_downcast::<OcrObject>();
         if let Some(lang) = lang {
-            return Ok(OcrData { code: lang.code(), language: lang.language(), screen: 0 });
+            return Ok(OcrData {
+                code: lang.code(),
+                language: lang.language(),
+            });
         }
         Err(anyhow::anyhow!("No OCR language selected"))
+    }
+
+    fn screen_data(&self) -> Result<ScreenData, anyhow::Error> {
+        let screen = self.imp().dd_screen.selected_item().and_downcast::<ScreenObject>();
+        if let Some(screen) = screen {
+            return Ok(ScreenData {
+                id: screen.id(),
+                app_name: screen.app_name(),
+                title: screen.title(),
+            });
+        }
+        Err(anyhow::anyhow!("No screen selected"))
     }
 
     fn translator_data(&self) -> Result<TranslatorData, anyhow::Error> {
@@ -59,13 +75,11 @@ impl Window {
         Err(anyhow::anyhow!("No translation language selected"))
     }
 
-    fn texts(&self) -> Result<Vec<Rect>, anyhow::Error> {
-        Ok(self.imp().texts.try_borrow()?.clone())
+    fn translation_areas(&self) -> Result<Vec<Rect>, anyhow::Error> {
+        Ok(self.imp().translation_areas.try_borrow()?.clone())
     }
 
     fn setup_actions(&self) {
-        let _ = gtk::SignalAction::new(SIGNAL_STATE);
-
         self.add_simple_action(
             "new-profile",
             clone!(@weak self as window => move |_, _| window.navigate("main"))
@@ -141,7 +155,6 @@ impl Window {
         let ocr_lang = self.settings().uint("ocr-lang");
         let tra_lang = self.settings().uint("tra-lang");
 
-        self.imp().texts.replace(Vec::new());
         let languages = rusty_tesseract::get_tesseract_langs();
         match languages {
             Ok(values) => {
@@ -177,8 +190,28 @@ impl Window {
         self.imp().dd_translation.set_model(Some(&list));
         self.imp().dd_translation.set_selected(tra_lang);
 
-        self.navigate("main")
-        //self.navigate("image")
+        let list = gio::ListStore::new(ScreenObject::static_type());
+        if let Ok(windows) = xcap::Window::all() {
+            for win in windows {
+                let title = win.title().to_string();
+                if title.is_empty() {
+                    continue;
+                }
+                list.append(&ScreenObject::new(win.id(), win.app_name().to_string(), title));
+            }
+        }
+
+        let expression = PropertyExpression::new(
+            ScreenObject::static_type(),
+            Expression::NONE,
+            "title"
+        );
+
+        self.imp().dd_screen.set_expression(Some(expression));
+        self.imp().dd_screen.set_model(Some(&list));
+        self.imp().dd_screen.set_selected(0);
+
+        self.navigate("main");
     }
 
     fn dialog(&self, message: &str, detail: &str) {
@@ -306,19 +339,39 @@ impl Window {
 
     fn text_overlay(&self, translate: bool) -> Result<(), anyhow::Error> {
         let ocr = self.ocr_data()?;
+        let screen = self.screen_data()?;
         let translator = self.translator_data()?;
-        let texts = (if self.imp().chk_full_screen.is_active() {
-            ocr.ocr_screen()
-        } else {
-            let areas = self.imp().translation_areas.try_borrow()?;
-            ocr.ocr_areas(&areas)
-        })?;
-        if translate {
-            let provider = self.settings().string("tra-provider");
-            let texts = translator.translate_from_ocr(&ocr, provider.as_str(), texts)?;
-            self.imp().texts.replace(texts);
-        }
-        let _ = self.draw_text();
+        let provider = self.settings().string("tra-provider");
+        let areas = self.translation_areas()?;
+        let is_areas = !self.imp().chk_full_screen.is_active();
+
+        let (tx, rx) = glib::MainContext::channel(glib::PRIORITY_DEFAULT);
+        thread::spawn(move || {
+            let _ = tx.send(
+                (|| -> Result<Vec<Rect>, anyhow::Error> {
+                    let texts = if is_areas {
+                        ocr.ocr_areas(&areas, &screen)
+                    } else {
+                        ocr.ocr_screen(&screen)
+                    };
+                    if translate {
+                        translator.translate_from_ocr(&ocr, provider.as_str(), texts?)
+                    } else {
+                        texts
+                    }
+                })()
+            );
+        });
+
+        rx.attach(
+            None,
+            clone!(@weak self as window => @default-return glib::Continue(false), move |result| {
+                if let Ok(texts) = result { let _ = window.draw_text(texts); }
+                if window.current_state() == State::Started { let _ = window.text_overlay(true); }
+                glib::Continue(false)
+            })
+        );
+
         Ok(())
     }
 
@@ -375,14 +428,12 @@ impl Window {
         Ok(())
     }
 
-    fn draw_text(&self) -> Result<(), anyhow::Error> {
-        let rects = self.imp().texts.try_borrow_mut()?;
-        let rects = rects.clone();
-
+    fn draw_text(&self, texts: Vec<Rect>) -> Result<(), anyhow::Error> {
+        self.imp().drawing_area.queue_draw();
         self.imp().drawing_area.set_draw_func(move |_, cr, _width, _height| {
             cr.set_antialias(gtk::cairo::Antialias::Fast);
-            for rect in rects.iter() {
-                draw_line(cr, rect);
+            for text in texts.iter() {
+                draw_line(cr, text);
             }
             cr.stroke().expect("Invalid cairo surface state");
         });
@@ -427,4 +478,14 @@ fn draw_text_with_outline(cr: &gtk::cairo::Context, x: f64, y: f64, text: &str) 
 
 fn value_in_range(value: i32, min: i32, max: i32) -> bool {
     value >= min && value <= max
+}
+
+fn _clean(drawing_area: &gtk::DrawingArea) -> Result<(), anyhow::Error> {
+    drawing_area.set_draw_func(move |_, cr, _width, _height| {
+        cr.set_source_rgba(0.0, 0.0, 0.0, 0.0);
+        cr.set_operator(gtk::cairo::Operator::Clear);
+        cr.rectangle(0.0, 0.0, _width as f64, _height as f64);
+        let _ = cr.paint_with_alpha(1.0);
+    });
+    Ok(())
 }

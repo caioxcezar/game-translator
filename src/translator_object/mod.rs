@@ -31,6 +31,7 @@ impl TranslatorData {
             });
         lang.unwrap()
     }
+
     pub fn all_languages() -> [TranslatorData; 30] {
         [
             TranslatorData {

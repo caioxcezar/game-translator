@@ -132,6 +132,9 @@
                           <object class="GtkBox">
                             <property name="orientation">horizontal</property>
                             <child>
+                              <object class="GtkDropDown" id="dd_screen" />
+                            </child>
+                            <child>
                               <object class="GtkDropDown" id="dd_ocr" />
                             </child>
                             <child>
