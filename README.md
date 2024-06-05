@@ -2,6 +2,13 @@
 
 Modulos utilizados para aplicações mobile
 
+## Funcionalidades
+
+- [x] Traduzir áreas selecionadas na aplicação escolhida
+- [x] Traduzir toda na aplicação selecionada
+- [ ] Criação de perfis
+- [ ] Fazer com que texto se encaixe na área devida
+
 ## Desenvolvimento
 
 Siga as instruções para instalação do [GTK4-rs](https://gtk-rs.org/gtk4-rs/stable/latest/book/installation_windows.html), eu recomendo utilizar MSYS2.  
