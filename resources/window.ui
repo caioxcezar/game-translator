@@ -134,7 +134,20 @@
                           </object>
                         </child>
                         <child>
-                          <object class="GtkDropDown" id="dd_screen" />
+                          <object class="GtkBox">
+                            <child>
+                              <object class="GtkDropDown" id="dd_screen">
+                                <property name="margin-end">10</property>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkButton">
+                                <property name="tooltip-text" translatable="yes">Update Available Windows</property>
+                                <property name="icon-name">view-refresh</property>
+                                <property name="action-name">win.refresh-windows</property>
+                              </object>
+                            </child>
+                          </object>
                         </child>
                         <child>
                           <object class="GtkBox">

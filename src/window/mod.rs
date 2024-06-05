@@ -125,6 +125,11 @@ impl Window {
             "configure-page",
             clone!(@weak self as window => move |_, _| window.configure_page())
         );
+
+        self.add_simple_action(
+            "refresh-windows",
+            clone!(@weak self as window => move |_, _| window.setup_dd_screen())
+        );
     }
 
     fn add_simple_action<F: Fn(&gio::SimpleAction, std::option::Option<&glib::Variant>) + 'static>(
@@ -171,9 +176,15 @@ impl Window {
     }
 
     fn setup_data(&self) {
-        let ocr_lang = self.settings().string("ocr-lang");
-        let tra_lang = self.settings().string("tra-lang");
+        self.setup_dd_ocr();
+        self.setup_dd_translation();
+        self.setup_dd_screen();
 
+        self.navigate("main");
+    }
+
+    fn setup_dd_ocr(&self) {
+        let ocr_lang = self.settings().string("ocr-lang");
         let languages = rusty_tesseract::get_tesseract_langs();
         match languages {
             Ok(values) => {
@@ -200,6 +211,10 @@ impl Window {
                     &format!("{}\r\nPossible cause of the problem: Tesseract is not installed in your system. Please follow the instructions at https://tesseract-ocr.github.io/tessdoc/Installation.html", value)
                 ),
         }
+    }
+
+    fn setup_dd_translation(&self) {
+        let tra_lang = self.settings().string("tra-lang");
         let list = gio::ListStore::new(TranslatorObject::static_type());
         let all_langs = TranslatorData::all_languages();
         for lang in &all_langs {
@@ -217,7 +232,9 @@ impl Window {
         self.imp().dd_translation.set_expression(Some(expression));
         self.imp().dd_translation.set_model(Some(&list));
         self.imp().dd_translation.set_selected(id as u32);
+    }
 
+    fn setup_dd_screen(&self) {
         let list = gio::ListStore::new(ScreenObject::static_type());
         if let Ok(windows) = xcap::Window::all() {
             for win in windows {
@@ -225,6 +242,11 @@ impl Window {
                 if title.is_empty() {
                     continue;
                 }
+                let title = if title.is_char_boundary(70) {
+                    format!("{}...", &title[..67])
+                } else {
+                    title
+                };
                 list.append(&ScreenObject::new(win.id(), win.app_name().to_string(), title));
             }
         }
@@ -238,8 +260,6 @@ impl Window {
         self.imp().dd_screen.set_expression(Some(expression));
         self.imp().dd_screen.set_model(Some(&list));
         self.imp().dd_screen.set_selected(0);
-
-        self.navigate("main");
     }
 
     fn dialog(&self, message: &str, detail: &str) {
@@ -317,7 +337,6 @@ impl Window {
     }
 
     fn open_overlay_page(&self, intangible: bool) {
-        WindowManager::close_window(WINDOW_NAME);
         let page = gtk::Window
             ::builder()
             .title(WINDOW_NAME)
@@ -336,13 +355,12 @@ impl Window {
             State::Stopped | State::Paused => self.start(),
             State::Started => self.stop(),
         };
-        self.imp().state.replace(state);
+        self.change_state(state);
     }
 
     fn start(&self) -> State {
         self.open_overlay_page(true);
-        self.imp().action_button.set_label("Stop");
-        if let Err(err) = self.text_overlay(true) {
+        if let Err(err) = self.text_overlay(false) {
             self.dialog("Text Overlay Error", &err.to_string());
         }
         State::Started
@@ -350,19 +368,44 @@ impl Window {
 
     fn stop(&self) -> State {
         WindowManager::close_window(WINDOW_NAME);
-        self.imp().action_button.set_label("Start");
         State::Stopped
     }
 
     fn configure_page(&self) {
-        self.open_overlay_page(false);
-        let areas = self.imp().translation_areas.try_borrow();
-        if areas.is_err() {
-            return;
+        if self.current_state() == State::Paused {
+            WindowManager::close_window(WINDOW_NAME);
+            self.change_state(State::Stopped);
+        } else {
+            self.open_overlay_page(false);
+            let areas = self.imp().translation_areas.try_borrow();
+            if areas.is_err() {
+                return;
+            }
+            self.draw_rectagles(areas.unwrap().clone());
+            self.change_state(State::Paused);
         }
-        self.draw_rectagles(areas.unwrap().clone());
-        self.imp().action_button.set_label("Start");
-        self.imp().state.replace(State::Paused);
+    }
+
+    fn change_state(&self, state: State) {
+        match state {
+            State::Started => {
+                self.imp().chk_full_screen.set_sensitive(false);
+                self.imp().config_button.set_sensitive(false);
+                self.imp().action_button.set_label("Stop");
+            }
+            State::Stopped => {
+                self.imp().chk_full_screen.set_sensitive(true);
+                self.imp().config_button.set_sensitive(!self.imp().chk_full_screen.is_active());
+                self.imp().action_button.set_label("Start");
+                self.imp().config_button.set_label("Configure Translation Areas");
+            }
+            State::Paused => {
+                self.imp().chk_full_screen.set_sensitive(false);
+                self.imp().action_button.set_sensitive(false);
+                self.imp().config_button.set_label("Stop configuring");
+            }
+        }
+        self.imp().state.replace(state);
     }
 
     fn text_overlay(&self, translate: bool) -> Result<(), anyhow::Error> {
@@ -394,8 +437,16 @@ impl Window {
         rx.attach(
             None,
             clone!(@weak self as window => @default-return glib::Continue(false), move |result| {
-                if let Ok(texts) = result { let _ = window.draw_text(texts); }
-                if window.current_state() == State::Started { let _ = window.text_overlay(true); }
+                match result {
+                    Ok(texts) => {
+                        let _ = window.draw_text(texts);
+                        if window.current_state() == State::Started { let _ = window.text_overlay(false); } 
+                    },
+                    Err(err) => {
+                        window.change_state(window.stop());
+                        window.dialog("Text Overlay Error", &err.to_string());
+                    },
+                }
                 glib::Continue(false)
             })
         );

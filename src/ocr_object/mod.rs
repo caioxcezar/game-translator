@@ -248,7 +248,7 @@ impl OcrData {
         let path = screen.capture()?;
         let image = Image::from_path(&path)?;
         let output = rusty_tesseract::image_to_data(&image, &default_args)?;
-        screen.remove(&path)?;
+        // screen.remove(&path)?;
         let mut texts = Vec::new();
         let mut line: Rect = Default::default();
         for dt in output.data {

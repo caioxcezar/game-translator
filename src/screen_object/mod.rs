@@ -2,10 +2,10 @@ mod imp;
 
 use glib::Object;
 use gtk::glib;
-use image::{ GenericImage, ImageBuffer, Rgba };
+use image::{ GenericImage, GenericImageView, ImageBuffer, Rgba };
 use uuid::Uuid;
 use xcap::Window;
-use std::fs;
+use std::{ fs, cmp };
 
 glib::wrapper! {
     pub struct ScreenObject(ObjectSubclass<imp::ScreenObject>);
@@ -63,9 +63,12 @@ impl ScreenData {
         let monitor = window.current_monitor();
         let mut image = ImageBuffer::<Rgba<u8>, Vec<u8>>::new(monitor.width(), monitor.height());
         let other = window.capture_image()?;
-        let x = if window.x() < 0 { 0 } else { window.x() as u32 };
-        let y = if window.y() < 0 { 0 } else { window.y() as u32 };
-        image.copy_from(&other, x, y)?;
+        let x = cmp::max(0, window.x());
+        let y = cmp::max(0, window.y());
+        let width = cmp::min(window.width(), monitor.width());
+        let height = cmp::min(window.height(), monitor.height());
+        let other = other.view(0, 0, width, height).to_image();
+        image.copy_from(&other, x as u32, y as u32)?;
         Ok(image)
     }
 
