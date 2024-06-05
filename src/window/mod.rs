@@ -396,6 +396,7 @@ impl Window {
             State::Stopped => {
                 self.imp().chk_full_screen.set_sensitive(true);
                 self.imp().config_button.set_sensitive(!self.imp().chk_full_screen.is_active());
+                self.imp().action_button.set_sensitive(true);
                 self.imp().action_button.set_label("Start");
                 self.imp().config_button.set_label("Configure Translation Areas");
             }
