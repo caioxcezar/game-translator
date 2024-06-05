@@ -1,6 +1,6 @@
 # Game Translator (WIP)
 
-Modulos utilizados para aplicações mobile
+Aplicação para tradução de aplicativos através de OCR (Reconhecimento ótico de caracteres)
 
 ## Funcionalidades
 
