@@ -360,7 +360,7 @@ impl Window {
 
     fn start(&self) -> State {
         self.open_overlay_page(true);
-        if let Err(err) = self.text_overlay(false) {
+        if let Err(err) = self.text_overlay(true) {
             self.dialog("Text Overlay Error", &err.to_string());
         }
         State::Started
@@ -440,7 +440,7 @@ impl Window {
                 match result {
                     Ok(texts) => {
                         let _ = window.draw_text(texts);
-                        if window.current_state() == State::Started { let _ = window.text_overlay(false); } 
+                        if window.current_state() == State::Started { let _ = window.text_overlay(true); } 
                     },
                     Err(err) => {
                         window.change_state(window.stop());
