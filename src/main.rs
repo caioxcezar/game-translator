@@ -5,6 +5,7 @@ mod rect;
 mod state;
 mod window_manager;
 mod window;
+mod utils;
 
 use adw::prelude::*;
 use gtk::{ gio, glib };

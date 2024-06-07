@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use glib::{ParamSpec, Properties, Value};
+use glib::{ ParamSpec, Properties, Value };
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
@@ -12,6 +12,7 @@ use super::OcrData;
 pub struct OcrObject {
     #[property(name = "code", get, set, type = String, member = code)]
     #[property(name = "language", get, set, type = String, member = language)]
+    #[property(name = "is-vertical", get, set, type = bool, member = is_vertical)]
     pub data: RefCell<OcrData>,
 }
 

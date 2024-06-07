@@ -1,5 +1,6 @@
 mod imp;
 use crate::screen_object::{ ScreenData, ScreenObject };
+use crate::utils;
 use crate::{ rect::Rect, window_manager::sys::WindowManager };
 use crate::state::State;
 use adw::prelude::*;
@@ -50,6 +51,7 @@ impl Window {
             return Ok(OcrData {
                 code: lang.code(),
                 language: lang.language(),
+                is_vertical: lang.is_vertical(),
             });
         }
         Err(anyhow::anyhow!("No OCR language selected"))
@@ -243,7 +245,7 @@ impl Window {
                     continue;
                 }
                 let title = if title.is_char_boundary(70) {
-                    format!("{}...", &title[..67])
+                    format!("{}...", &utils::split_utf8(&title, 0, 67))
                 } else {
                     title
                 };
@@ -311,8 +313,8 @@ impl Window {
                 let new_rect = Rect { height, width, x, y, ..Default::default() };
                 
                 can_add = can_add && !areas.iter().any(|rect| {
-                    let x_overlap = value_in_range(new_rect.x, rect.x, rect.x + rect.width) || value_in_range(rect.x, new_rect.x, new_rect.x + new_rect.width);
-                    let y_overlap = value_in_range(new_rect.y, rect.y, rect.y + rect.height) || value_in_range(rect.y, new_rect.y, new_rect.y + new_rect.height);
+                    let x_overlap = utils::value_in_range(new_rect.x, rect.x, rect.x + rect.width) || utils::value_in_range(rect.x, new_rect.x, new_rect.x + new_rect.width);
+                    let y_overlap = utils::value_in_range(new_rect.y, rect.y, rect.y + rect.height) || utils::value_in_range(rect.y, new_rect.y, new_rect.y + new_rect.height);
                     x_overlap && y_overlap
                 });
 
@@ -360,7 +362,7 @@ impl Window {
 
     fn start(&self) -> State {
         self.open_overlay_page(true);
-        if let Err(err) = self.text_overlay(true) {
+        if let Err(err) = self.text_overlay(false) {
             self.dialog("Text Overlay Error", &err.to_string());
         }
         State::Started
@@ -381,6 +383,7 @@ impl Window {
             if areas.is_err() {
                 return;
             }
+            // let _ = self.draw_text("返せ る よ な ?");
             self.draw_rectagles(areas.unwrap().clone());
             self.change_state(State::Paused);
         }
@@ -411,6 +414,7 @@ impl Window {
 
     fn text_overlay(&self, translate: bool) -> Result<(), anyhow::Error> {
         let ocr = self.ocr_data()?;
+        let is_vertical = ocr.is_vertical;
         let screen = self.screen_data()?;
         let translator = self.translator_data()?;
         let provider = self.settings().string("tra-provider");
@@ -440,8 +444,8 @@ impl Window {
             clone!(@weak self as window => @default-return glib::Continue(false), move |result| {
                 match result {
                     Ok(texts) => {
-                        let _ = window.draw_text(texts);
-                        if window.current_state() == State::Started { let _ = window.text_overlay(true); } 
+                        let _ = window.draw_text(texts, is_vertical);
+                        if window.current_state() == State::Started { let _ = window.text_overlay(false); } 
                     },
                     Err(err) => {
                         window.change_state(window.stop());
@@ -455,12 +459,25 @@ impl Window {
         Ok(())
     }
 
-    fn draw_text(&self, texts: Vec<Rect>) -> Result<(), anyhow::Error> {
+    fn draw_text(&self, texts: Vec<Rect>, vertical: bool) -> Result<(), anyhow::Error> {
         self.imp().drawing_area.queue_draw();
         self.imp().drawing_area.set_draw_func(move |_, cr, _width, _height| {
+            cr.select_font_face(
+                "Noto Sans CJK JP",
+                gtk::cairo::FontSlant::Normal,
+                gtk::cairo::FontWeight::Normal
+            );
             cr.set_antialias(gtk::cairo::Antialias::Fast);
+
             for text in texts.iter() {
-                draw_line(cr, text);
+                if text.text.trim().is_empty() {
+                    return;
+                }
+                if vertical {
+                    draw_vertical_line(cr, text);
+                } else {
+                    draw_line(cr, text);
+                }
             }
             cr.stroke().expect("Invalid cairo surface state");
         });
@@ -468,25 +485,32 @@ impl Window {
     }
 }
 
+fn draw_vertical_line(cr: &gtk::cairo::Context, rect: &Rect) {
+    let mut x = rect.x as f64;
+    let y = rect.y as f64;
+    let lines = rect.text.lines();
+    let font_size = (rect.width / (lines.clone().count() as i32)) as f64;
+    cr.set_font_size(font_size);
+
+    for line in lines {
+        let mut _y = y;
+        for c in line.split("") {
+            draw_text_with_outline(cr, x, _y, c);
+            _y += font_size;
+        }
+        x += font_size;
+    }
+}
+
 fn draw_line(cr: &gtk::cairo::Context, rect: &Rect) {
     let x = rect.x as f64;
-    let y = rect.y as f64;
-    cr.select_font_face(
-        "times, serif",
-        gtk::cairo::FontSlant::Normal,
-        gtk::cairo::FontWeight::Normal
-    );
-    let chars: Vec<char> = rect.text.chars().collect();
-    if chars.is_empty() {
-        return;
-    }
+    let mut y = rect.y as f64;
     let lines = rect.text.lines();
     let font_size = (rect.height / (lines.clone().count() as i32)) as f64;
     cr.set_font_size(font_size);
-    let mut pos_y = font_size;
     for line in lines {
-        draw_text_with_outline(cr, x, y + pos_y, line);
-        pos_y += font_size;
+        y += font_size;
+        draw_text_with_outline(cr, x, y, line);
     }
 }
 
@@ -501,10 +525,6 @@ fn draw_text_with_outline(cr: &gtk::cairo::Context, x: f64, y: f64, text: &str) 
     cr.move_to(x, y);
     cr.set_source_rgba(255.0, 255.0, 255.0, 1.0);
     let _ = cr.show_text(text);
-}
-
-fn value_in_range(value: i32, min: i32, max: i32) -> bool {
-    value >= min && value <= max
 }
 
 fn _clean(drawing_area: &gtk::DrawingArea) -> Result<(), anyhow::Error> {

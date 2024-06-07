@@ -15,13 +15,18 @@ glib::wrapper! {
 impl OcrObject {
     pub fn new(code: String) -> Self {
         let land_data = OcrData::new(&code);
-        Object::builder().property("code", code).property("language", land_data.language).build()
+        Object::builder()
+            .property("code", code)
+            .property("language", land_data.language)
+            .property("is-vertical", land_data.is_vertical)
+            .build()
     }
 }
 #[derive(Default, Clone)]
 pub struct OcrData {
     pub code: String,
     pub language: String,
+    pub is_vertical: bool,
 }
 
 impl OcrData {
@@ -195,6 +200,7 @@ impl OcrData {
         OcrData {
             code: code.to_owned(),
             language: language.to_owned(),
+            is_vertical: language.contains("Vertical"),
         }
     }
 
@@ -248,7 +254,7 @@ impl OcrData {
         let path = screen.capture()?;
         let image = Image::from_path(&path)?;
         let output = rusty_tesseract::image_to_data(&image, &default_args)?;
-        // screen.remove(&path)?;
+        screen.remove(&path)?;
         let mut texts = Vec::new();
         let mut line: Rect = Default::default();
         for dt in output.data {
