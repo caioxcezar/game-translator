@@ -3,8 +3,7 @@ mod imp;
 use glib::Object;
 use gtk::glib;
 use rusty_tesseract::Image;
-use crate::{ rect::Rect, screen_object::ScreenData };
-use rayon::prelude::*;
+use crate::{ rect::Rect, screen_object::ScreenData, utils };
 
 use crate::translator_object::TranslatorData;
 
@@ -213,37 +212,14 @@ impl OcrData {
             lang: self.code.to_owned(),
             ..Default::default()
         };
-        let rects = areas
-            .par_iter()
-            .flat_map(
-                |area| -> Result<Rect, anyhow::Error> {
-                    let result = self.ocr_area(area, &default_args, screen);
-                    if result.is_err() {
-                        println!("Error: {:?}", &result);
-                    }
-                    result
-                }
-            )
-            .collect::<Vec<Rect>>();
+        let mut rects = vec![];
+        for path in screen.capture_areas(areas)? {
+            let image = Image::from_path(&path)?;
+            let text = rusty_tesseract::image_to_string(&image, &default_args)?.trim().to_string();
+            utils::remove_file(&path)?;
+            rects.push(Rect { text, ..areas[rects.len()].clone() });
+        }
         Ok(rects)
-    }
-
-    pub fn ocr_area(
-        &self,
-        area: &Rect,
-        default_args: &rusty_tesseract::Args,
-        screen: &ScreenData
-    ) -> Result<Rect, anyhow::Error> {
-        let path = screen.capture_area(
-            area.x as u32,
-            area.y as u32,
-            area.width as u32,
-            area.height as u32
-        )?;
-        let image = Image::from_path(&path)?;
-        let text = rusty_tesseract::image_to_string(&image, default_args)?.trim().to_string();
-        screen.remove(&path)?;
-        Ok(Rect { text, ..area.clone() })
     }
 
     pub fn ocr_screen(&self, screen: &ScreenData) -> Result<Vec<Rect>, anyhow::Error> {
@@ -254,7 +230,7 @@ impl OcrData {
         let path = screen.capture()?;
         let image = Image::from_path(&path)?;
         let output = rusty_tesseract::image_to_data(&image, &default_args)?;
-        screen.remove(&path)?;
+        utils::remove_file(&path)?;
         let mut texts = Vec::new();
         let mut line: Rect = Default::default();
         for dt in output.data {

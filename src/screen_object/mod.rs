@@ -5,7 +5,8 @@ use gtk::glib;
 use image::{ GenericImage, GenericImageView, ImageBuffer, Rgba };
 use uuid::Uuid;
 use xcap::Window;
-use std::{ fs, cmp };
+use std::cmp;
+use crate::{ rect, utils };
 
 glib::wrapper! {
     pub struct ScreenObject(ObjectSubclass<imp::ScreenObject>);
@@ -32,23 +33,23 @@ impl ScreenData {
         ScreenData { id, app_name, title }
     }
 
-    pub fn capture_area(
-        &self,
-        x: u32,
-        y: u32,
-        width: u32,
-        height: u32
-    ) -> Result<String, anyhow::Error> {
+    pub fn capture_areas(&self, areas: &Vec<rect::Rect>) -> Result<Vec<String>, anyhow::Error> {
         let mut image = self.capture_screen()?;
-        let copy = image.sub_image(x, y, width, height);
-        let path = format!("target/{}.png", Uuid::new_v4());
-        copy.to_image().save(&path)?;
-        Ok(path)
+        let path = utils::temp_path()?;
+        let mut strings = vec![];
+        for a in areas {
+            let copy = image.sub_image(a.x as u32, a.y as u32, a.width as u32, a.height as u32);
+            let img_path = format!("{}/{}.png", &path, Uuid::new_v4());
+            copy.to_image().save(&img_path)?;
+            strings.push(img_path);
+        }
+        Ok(strings)
     }
 
     pub fn capture(&self) -> Result<String, anyhow::Error> {
         let image = self.capture_screen()?;
-        let path = format!("target/{}.png", Uuid::new_v4());
+        let path = utils::temp_path()?;
+        let path = format!("{}/{}.png", path, Uuid::new_v4());
         image.save(&path)?;
         Ok(path)
     }
@@ -70,10 +71,5 @@ impl ScreenData {
         let other = other.view(0, 0, width, height).to_image();
         image.copy_from(&other, x as u32, y as u32)?;
         Ok(image)
-    }
-
-    pub fn remove(&self, path: &str) -> Result<(), anyhow::Error> {
-        fs::remove_file(path)?;
-        Ok(())
     }
 }

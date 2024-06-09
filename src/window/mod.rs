@@ -291,6 +291,8 @@ impl Window {
                 if width == 0 && height == 0 {
                     can_add = false;
                     areas.retain_mut(|area| x < area.x || x > area.x + area.width || y < area.y || y > area.y + area.height);
+                } else if width == 0 || height == 0 {
+                    can_add = false;
                 } else {
                     areas.iter_mut().for_each(|area| {
                         if x < area.x || x > area.x + area.width || y < area.y || y > area.y + area.height {
@@ -362,7 +364,7 @@ impl Window {
 
     fn start(&self) -> State {
         self.open_overlay_page(true);
-        if let Err(err) = self.text_overlay(false) {
+        if let Err(err) = self.text_overlay() {
             self.dialog("Text Overlay Error", &err.to_string());
         }
         State::Started
@@ -412,7 +414,7 @@ impl Window {
         self.imp().state.replace(state);
     }
 
-    fn text_overlay(&self, translate: bool) -> Result<(), anyhow::Error> {
+    fn text_overlay(&self) -> Result<(), anyhow::Error> {
         let ocr = self.ocr_data()?;
         let is_vertical = ocr.is_vertical;
         let screen = self.screen_data()?;
@@ -430,11 +432,7 @@ impl Window {
                     } else {
                         ocr.ocr_screen(&screen)
                     };
-                    if translate {
-                        translator.translate_from_ocr(&ocr, provider.as_str(), texts?)
-                    } else {
-                        texts
-                    }
+                    translator.translate_from_ocr(&ocr, provider.as_str(), texts?)
                 })()
             );
         });
@@ -445,7 +443,7 @@ impl Window {
                 match result {
                     Ok(texts) => {
                         let _ = window.draw_text(texts, is_vertical);
-                        if window.current_state() == State::Started { let _ = window.text_overlay(false); } 
+                        if window.current_state() == State::Started { let _ = window.text_overlay(); } 
                     },
                     Err(err) => {
                         window.change_state(window.stop());
@@ -471,7 +469,7 @@ impl Window {
 
             for text in texts.iter() {
                 if text.text.trim().is_empty() {
-                    return;
+                    continue;
                 }
                 if vertical {
                     draw_vertical_line(cr, text);
@@ -489,9 +487,9 @@ fn draw_vertical_line(cr: &gtk::cairo::Context, rect: &Rect) {
     let mut x = rect.x as f64;
     let y = rect.y as f64;
     let lines = rect.text.lines();
-    let font_size = (rect.width / (lines.clone().count() as i32)) as f64;
-    cr.set_font_size(font_size);
+    let font_size = utils::calc_font_size(&lines, rect.height as f64);
 
+    cr.set_font_size(font_size);
     for line in lines {
         let mut _y = y;
         for c in line.split("") {

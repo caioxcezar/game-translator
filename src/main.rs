@@ -7,6 +7,8 @@ mod window_manager;
 mod window;
 mod utils;
 
+use std::fs;
+
 use adw::prelude::*;
 use gtk::{ gio, glib };
 use window::Window;
@@ -41,6 +43,12 @@ fn setup_shortcuts(app: &adw::Application) {
 fn build_ui(app: &adw::Application) {
     // Create a new custom window and show it
     let window = Window::new(app);
+    window.connect_close_request(|_| {
+        if let Ok(path) = utils::temp_path() {
+            fs::remove_dir_all(path).unwrap();
+        }
+        glib::signal::Inhibit(false)
+    });
     window.set_visible(true);
 }
 
