@@ -6,7 +6,7 @@ use image::{ GenericImage, GenericImageView, ImageBuffer, Rgba };
 use uuid::Uuid;
 use xcap::Window;
 use std::cmp;
-use crate::{ rect, utils };
+use crate::{ area_object::AreaData, utils };
 
 glib::wrapper! {
     pub struct ScreenObject(ObjectSubclass<imp::ScreenObject>);
@@ -33,7 +33,7 @@ impl ScreenData {
         ScreenData { id, app_name, title }
     }
 
-    pub fn capture_areas(&self, areas: &Vec<rect::Rect>) -> Result<Vec<String>, anyhow::Error> {
+    pub fn capture_areas(&self, areas: &Vec<AreaData>) -> Result<Vec<String>, anyhow::Error> {
         let mut image = self.capture_screen()?;
         let path = utils::temp_path()?;
         let mut strings = vec![];

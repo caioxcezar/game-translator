@@ -1,10 +1,12 @@
 mod imp;
 
+use std::sync::Arc;
+
 use glib::Object;
 use gtk::glib;
-use headless_chrome::Browser;
+use headless_chrome::Tab;
 
-use crate::{ ocr_object::OcrData, rect::Rect };
+use crate::{ area_object::AreaData, ocr_object::OcrData };
 
 glib::wrapper! {
     pub struct TranslatorObject(ObjectSubclass<imp::TranslatorObject>);
@@ -159,10 +161,11 @@ impl TranslatorData {
 
     pub fn translate_from_ocr(
         &self,
+        browser: &Arc<Tab>,
         ocr: &OcrData,
         provider: &str,
-        texts: Vec<Rect>
-    ) -> Result<Vec<Rect>, anyhow::Error> {
+        texts: Vec<AreaData>
+    ) -> Result<Vec<AreaData>, anyhow::Error> {
         let mut texts = texts;
         if texts.is_empty() {
             return Ok(texts);
@@ -173,7 +176,7 @@ impl TranslatorData {
             .collect::<Vec<String>>()
             .join("\n=+=\n");
 
-        let text = self.translate(&ocr.to_translator().code, provider, &text)?;
+        let text = self.translate(browser, &ocr.to_translator().code, provider, &text)?;
 
         let _texts = text.split("\n=+=\n").collect::<Vec<&str>>();
         for (i, tx) in _texts.iter().enumerate() {
@@ -184,18 +187,21 @@ impl TranslatorData {
 
     pub fn translate(
         &self,
+        browser: &Arc<Tab>,
         source: &str,
         provider: &str,
         text: &str
     ) -> Result<String, anyhow::Error> {
         match provider {
-            "google" => self.translate_from_google(&self.code, source, &urlencoding::encode(text)),
-            _ => self.translate_from_deepl(&self.code, source, &urlencoding::encode(text)),
+            "google" =>
+                self.translate_from_google(browser, &self.code, source, &urlencoding::encode(text)),
+            _ => self.translate_from_deepl(browser, &self.code, source, &urlencoding::encode(text)),
         }
     }
 
     pub fn translate_from_deepl(
         &self,
+        tab: &Arc<Tab>,
         target: &str,
         source: &str,
         text: &str
@@ -207,8 +213,6 @@ impl TranslatorData {
             target,
             text.replace(' ', "%20")
         );
-        let browser = Browser::default()?;
-        let tab = browser.new_tab()?;
         tab.navigate_to(&url)?;
         tab.wait_until_navigated()?;
         let mut translated_text = "".to_owned();
@@ -217,11 +221,13 @@ impl TranslatorData {
                 translated_text.push_str(&txt);
             }
         }
+        tab.close(true)?;
         Ok(translated_text)
     }
 
     pub fn translate_from_google(
         &self,
+        tab: &Arc<Tab>,
         target: &str,
         source: &str,
         text: &str
@@ -233,8 +239,6 @@ impl TranslatorData {
             target,
             text.replace(' ', "%20")
         );
-        let browser = Browser::default()?;
-        let tab = browser.new_tab()?;
         tab.navigate_to(&url)?;
         tab.wait_until_navigated()?;
         let mut translated_text = "".to_owned();

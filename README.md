@@ -2,11 +2,16 @@
 
 Aplicação para tradução de aplicativos através de OCR (Reconhecimento ótico de caracteres)
 
+## Instalação
+
+É necessário instalar o [Tesseract](https://tesseract-ocr.github.io/tessdoc/Installation.html) para reconhecimento ótico de caracteres.  
+A aplicação atualmente necessita da fonte [Sarasa Gothic](https://github.com/be5invis/Sarasa-Gothic/releases) para exibir texto.
+
 ## Funcionalidades
 
 - [x] Traduzir áreas selecionadas na aplicação escolhida
 - [x] Traduzir toda na aplicação selecionada
-- [ ] Criação de perfis
+- [x] Criação de perfis
 - [ ] Fazer com que texto se encaixe na área devida
 
 ## Desenvolvimento
@@ -26,5 +31,3 @@ mkdir C:/ProgramData/glib-2.0/schemas/
 cp org.caioxcezar.settings_gt.gschema.xml C:/ProgramData/glib-2.0/schemas/
 glib-compile-schemas C:/ProgramData/glib-2.0/schemas/
 ```
-
-Por fim é necessário instalar o [Tesseract](https://tesseract-ocr.github.io/tessdoc/Installation.html)
