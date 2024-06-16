@@ -217,12 +217,19 @@
                           </object>
                         </child>
                         <child>
-                          <object class="GtkButton">
+                          <object class="GtkButton" id="remove_button">
                             <property name="margin-top">5</property>
-                            <property name="margin-bottom">10</property>
                             <property name="label">Remove</property>
                             <property name="tooltip-text" translatable="yes">Remove this current profile</property>
                             <property name="action-name">win.remove-profile</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkEditableLabel" id="status_label">
+                            <property name="text">Idle</property>
+                            <property name="margin-top">5</property>
+                            <property name="editable">false</property>
+                            <property name="margin-bottom">10</property>
                           </object>
                         </child>
                       </object>

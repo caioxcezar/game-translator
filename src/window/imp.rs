@@ -4,7 +4,6 @@ use crate::{ profile_object::{ ProfileData, ProfileObject }, settings::Settings,
 use adw::subclass::prelude::*;
 use glib::subclass::InitializingObject;
 use gtk::{ gio, glib, CompositeTemplate, prelude::ListModelExtManual };
-use headless_chrome::Browser;
 use once_cell::sync::OnceCell;
 use std::fs;
 // ANCHOR: struct
@@ -26,6 +25,10 @@ pub struct Window {
     #[template_child]
     pub action_button: TemplateChild<gtk::Button>,
     #[template_child]
+    pub remove_button: TemplateChild<gtk::Button>,
+    #[template_child]
+    pub status_label: TemplateChild<gtk::EditableLabel>,
+    #[template_child]
     pub title: TemplateChild<gtk::Entry>,
     #[template_child]
     pub config_button: TemplateChild<gtk::Button>,
@@ -33,7 +36,6 @@ pub struct Window {
     pub profiles_list: TemplateChild<gtk::ListBox>,
     pub profiles: OnceCell<gio::ListStore>,
     pub running: RefCell<bool>,
-    pub browser: OnceCell<Browser>,
     pub state: RefCell<state::State>,
     pub drawing_area: gtk::DrawingArea,
     pub use_areas: gtk::Switch,
@@ -69,7 +71,6 @@ impl ObjectImpl for Window {
         obj.setup_data();
         obj.setup_actions();
         obj.setup_drag_action();
-        obj.setup_browser();
         obj.setup_profiles();
         let _ = obj.restore_data();
     }

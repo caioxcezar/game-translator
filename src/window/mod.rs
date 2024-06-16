@@ -317,16 +317,6 @@ impl Window {
         dialog.show(Some(self))
     }
 
-    fn setup_browser(&self) {
-        let browser = Browser::default().expect("Can't open browser");
-        browser.new_tab().expect("Can't open new tab");
-        let _ = self.imp().browser.set(browser);
-    }
-
-    fn browser(&self) -> Browser {
-        self.imp().browser.get().expect("Browser not initialized").clone()
-    }
-
     // region: Profiles
     fn profiles(&self) -> &ListStore {
         self.imp().profiles.get().expect("`profiles` should be set in `setup_profiles`.")
@@ -596,8 +586,10 @@ impl Window {
         self.open_overlay_page(true);
         if let Err(err) = self.text_overlay() {
             self.dialog("Text Overlay Error", &err.to_string());
+            State::Stopped
+        } else {
+            State::Started
         }
-        State::Started
     }
 
     fn stop(&self) -> State {
@@ -626,18 +618,21 @@ impl Window {
             State::Started => {
                 obj.chk_full_screen.set_sensitive(false);
                 obj.config_button.set_sensitive(false);
+                obj.remove_button.set_sensitive(false);
                 obj.action_button.set_label("Stop");
             }
             State::Stopped => {
                 obj.chk_full_screen.set_sensitive(true);
                 obj.config_button.set_sensitive(!obj.chk_full_screen.is_active());
                 obj.action_button.set_sensitive(true);
+                obj.remove_button.set_sensitive(true);
                 obj.action_button.set_label("Start");
                 obj.config_button.set_label("Configure Translation Areas");
             }
             State::Paused => {
                 obj.chk_full_screen.set_sensitive(false);
                 obj.action_button.set_sensitive(false);
+                obj.remove_button.set_sensitive(false);
                 obj.config_button.set_label("Stop configuring");
             }
         }
@@ -646,6 +641,7 @@ impl Window {
 
     fn text_overlay(&self) -> Result<(), anyhow::Error> {
         self.imp().running.replace(true);
+        self.imp().status_label.set_text("Running");
 
         let ocr = self.ocr_data()?;
         let is_vertical = ocr.is_vertical;
@@ -655,19 +651,20 @@ impl Window {
         let provider = settings.tra_provider().to_string();
         let areas = self.translation_areas()?;
         let is_areas = !self.imp().chk_full_screen.is_active();
-        let browser = self.browser();
 
         let (sender, receiver) = async_channel::bounded(1);
         thread::spawn(move || {
             let res = (|| -> Result<Vec<AreaData>, anyhow::Error> {
-                let tab = browser.get_tabs().lock().unwrap();
-                let tab = tab.first().unwrap();
+                // TODO remove the necessite of this
+                // Tried to create a OneCell ate Window but i kept getting the error: unable to make method calls because underlying connection is closed
+                let browser = Browser::default()?;
                 let texts = if is_areas {
                     ocr.ocr_areas(&areas, &screen)
                 } else {
                     ocr.ocr_screen(&screen)
                 };
-                translator.translate_from_ocr(tab, &ocr, &provider, texts?)
+                let tab = browser.new_tab()?;
+                translator.translate_from_ocr(&tab, &ocr, &provider, texts?)
             })();
             let _ = sender.send_blocking(res);
         });
@@ -676,6 +673,7 @@ impl Window {
             clone!(@weak self as window => async move {
                 let message = receiver.recv().await;
                 window.imp().running.replace(false);
+                window.imp().status_label.set_text("Idle");
                 if message.is_err() {
                     window.error_dialog(&message.unwrap_err().to_string());
                     return;

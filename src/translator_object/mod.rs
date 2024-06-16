@@ -172,15 +172,15 @@ impl TranslatorData {
         }
         let text = texts
             .iter()
-            .map(|rect| rect.text.clone())
+            .map(|rect| format!("-> {}\n", rect.text))
             .collect::<Vec<String>>()
-            .join("\n=+=\n");
+            .join("");
 
         let text = self.translate(browser, &ocr.to_translator().code, provider, &text)?;
 
-        let _texts = text.split("\n=+=\n").collect::<Vec<&str>>();
-        for (i, tx) in _texts.iter().enumerate() {
-            texts[i].text = tx.to_string();
+        let _texts = text.split("-> ").collect::<Vec<&str>>();
+        for (i, tx) in _texts.iter().enumerate().skip(1) {
+            texts[i - 1].text = tx.to_string();
         }
         Ok(texts)
     }
@@ -206,7 +206,6 @@ impl TranslatorData {
         source: &str,
         text: &str
     ) -> Result<String, anyhow::Error> {
-        let path = "//*[@id=\"textareasContainer\"]/div[3]/section/div[1]/d-textarea/div";
         let url = format!(
             "https://deepl.com/en/translator#{}/{}/{}",
             source,
@@ -215,12 +214,9 @@ impl TranslatorData {
         );
         tab.navigate_to(&url)?;
         tab.wait_until_navigated()?;
-        let mut translated_text = "".to_owned();
-        for element in tab.wait_for_elements_by_xpath(path)?.iter() {
-            if let Ok(txt) = element.get_inner_text() {
-                translated_text.push_str(&txt);
-            }
-        }
+        let translated_text = tab
+            .wait_for_element("[role='textbox'][aria-labelledby='translation-target-heading']")?
+            .get_inner_text()?;
         Ok(translated_text)
     }
 
@@ -231,7 +227,6 @@ impl TranslatorData {
         source: &str,
         text: &str
     ) -> Result<String, anyhow::Error> {
-        let path = "//*[@jsname=\"W297wb\"]";
         let url = format!(
             "https://translate.google.com.br/?sl={}&tl={}&text=${}&op=translate",
             source,
@@ -240,12 +235,12 @@ impl TranslatorData {
         );
         tab.navigate_to(&url)?;
         tab.wait_until_navigated()?;
-        let mut translated_text = "".to_owned();
-        for element in tab.wait_for_elements_by_xpath(path)?.iter() {
-            if let Ok(txt) = element.get_inner_text() {
-                translated_text.push_str(&txt);
-            }
-        }
+        let translated_text = tab
+            .wait_for_elements("[jsname='W297wb']")?
+            .iter()
+            .flat_map(|element| element.get_inner_text())
+            .collect::<Vec<String>>()
+            .join("");
         Ok(translated_text)
     }
 }
