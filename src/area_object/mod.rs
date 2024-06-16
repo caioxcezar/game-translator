@@ -35,5 +35,6 @@ pub struct AreaData {
     pub y: i32,
     pub width: i32,
     pub height: i32,
+    #[serde(skip_serializing, default)]
     pub text: String,
 }
