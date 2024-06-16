@@ -5,19 +5,19 @@ use crate::{
     ocr_object::{ OcrData, OcrObject },
     profile_object::{ ProfileData, ProfileObject },
     screen_object::{ ScreenData, ScreenObject },
+    settings::Settings,
     state::State,
     translator_object::{ TranslatorData, TranslatorObject },
     utils,
     window_manager::sys::WindowManager,
-    APP_ID,
 };
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gio::{ Settings, SimpleAction, ListStore };
+use gio::{ SimpleAction, ListStore };
 use glib::{ clone, Object };
 use gtk::{ gio, glib, pango, Expression, PropertyExpression };
 use headless_chrome::Browser;
-use std::thread;
+use std::{ cell::RefMut, thread };
 use anyhow::Context;
 
 glib::wrapper! {
@@ -36,14 +36,16 @@ impl Window {
     }
 
     fn setup_settings(&self) {
-        let settings = Settings::new(APP_ID);
-        self.imp()
-            .settings.set(settings)
-            .expect("`settings` should not be set before calling `setup_settings`.");
+        let file = utils::open_file(utils::settings_path().expect("Failed to get settings path"));
+        let settings = match file {
+            Ok(file) => serde_json::from_reader(file).expect("Failed to read settings file"),
+            Err(_) => Settings { ..Default::default() },
+        };
+        self.imp().settings.replace(settings);
     }
 
-    fn settings(&self) -> &Settings {
-        self.imp().settings.get().expect("`settings` should be set in `setup_settings`.")
+    fn settings(&self) -> RefMut<Settings> {
+        self.imp().settings.borrow_mut()
     }
 
     fn current_state(&self) -> State {
@@ -176,10 +178,10 @@ impl Window {
             clone!(@weak self as window => move |_, _| window.configure_page())
         );
 
-        // self.add_simple_action(
-        //     "configure-page",
-        //     clone!(@weak self as window => move |_, _| window.teste_fontes())
-        // );
+        self.add_simple_action(
+            "remove-profile",
+            clone!(@weak self as window => move |_, _| window.remove_current_profile())
+        );
 
         self.add_simple_action(
             "refresh-windows",
@@ -213,14 +215,15 @@ impl Window {
     }
 
     fn set_language_action(&self) {
-        let provider = self.settings().string("tra-provider");
+        let settings = self.settings();
+        let provider = settings.tra_provider();
         self.add_toggle_action(
             "toggle-language",
-            provider.as_str(),
+            provider,
             clone!(@weak self as window => move |action, value| {
                 let new_value = value.unwrap().to_owned();
                 let str_value = new_value.str().unwrap();
-                let _ = window.settings().set("tra-provider", str_value);
+                let _ = window.settings().set("tra-provider", str_value.to_string());
                 action.set_state(&new_value);
             })
         )
@@ -450,8 +453,9 @@ impl Window {
             }
         }
 
-        let ocr_lang = self.settings().string("ocr-lang");
-        let tra_lang = self.settings().string("tra-lang");
+        let settings = self.settings();
+        let ocr_lang = settings.ocr_lang();
+        let tra_lang = settings.tra_lang();
 
         self.profiles().append(
             &ProfileObject::from_profile_data(ProfileData {
@@ -472,6 +476,20 @@ impl Window {
         collection_object.bind_property("title", &label, "label").sync_create().build();
 
         gtk::ListBoxRow::builder().child(&label).build()
+    }
+
+    fn remove_current_profile(&self) {
+        let index = self.current_profile_index();
+        let profiles = self.profiles();
+        profiles.remove(index);
+        if profiles.n_items() == 0 {
+            if let Err(err) = self.new_profile() {
+                self.dialog("Failed to create new profile", &err.to_string());
+            }
+        }
+        let obj = self.imp();
+        let row = obj.profiles_list.row_at_index(0);
+        obj.profiles_list.select_row(row.as_ref());
     }
     // endregion: Profiles
 
@@ -601,57 +619,6 @@ impl Window {
         }
     }
 
-    fn teste_fontes(&self) {
-        let vec: Vec<AreaData> = vec![
-            AreaData {
-                x: 0,
-                y: 0,
-                width: 200,
-                height: 100,
-                text: "Um texto text maior".to_string(),
-            },
-            AreaData {
-                x: 0,
-                y: 100,
-                width: 400,
-                height: 100,
-                text: "Um texto text".to_string(),
-            },
-            AreaData {
-                x: 0,
-                y: 200,
-                width: 800,
-                height: 100,
-                text: "Um texto text".to_string(),
-            }
-        ];
-        self.open_overlay_page(true);
-
-        self.imp().drawing_area.set_draw_func(move |_, cr, _width, _height| {
-            cr.set_source_rgba(250.0, 0.0, 250.0, 1.0);
-            vec.iter().for_each(|area| {
-                let ret = gtk::gdk::Rectangle::new(area.x, area.y, area.width, area.height);
-                cr.add_rectangle(&ret);
-            });
-            cr.stroke().expect("Invalid cairo surface state");
-
-            cr.select_font_face(
-                "Noto Sans CJK JP",
-                gtk::cairo::FontSlant::Normal,
-                gtk::cairo::FontWeight::Normal
-            );
-            cr.set_antialias(gtk::cairo::Antialias::Fast);
-
-            for text in vec.iter() {
-                if text.text.trim().is_empty() {
-                    continue;
-                }
-                draw_line(cr, text);
-            }
-            cr.stroke().expect("Invalid cairo surface state");
-        });
-    }
-
     fn change_state(&self, state: State) {
         let obj = self.imp();
         match state {
@@ -683,7 +650,8 @@ impl Window {
         let is_vertical = ocr.is_vertical;
         let screen = self.screen_data()?;
         let translator = self.translator_data()?;
-        let provider = self.settings().string("tra-provider");
+        let settings = self.settings();
+        let provider = settings.tra_provider().to_string();
         let areas = self.translation_areas()?;
         let is_areas = !self.imp().chk_full_screen.is_active();
         let browser = self.browser();
@@ -698,7 +666,7 @@ impl Window {
                 } else {
                     ocr.ocr_screen(&screen)
                 };
-                translator.translate_from_ocr(tab, &ocr, provider.as_str(), texts?)
+                translator.translate_from_ocr(tab, &ocr, &provider, texts?)
             })();
             let _ = sender.send_blocking(res);
         });
@@ -797,14 +765,4 @@ fn draw_text_with_outline(cr: &gtk::cairo::Context, x: f64, y: f64, text: &str) 
     cr.move_to(x, y);
     cr.set_source_rgba(255.0, 255.0, 255.0, 1.0);
     let _ = cr.show_text(text);
-}
-
-fn clean(drawing_area: &gtk::DrawingArea) -> Result<(), anyhow::Error> {
-    drawing_area.set_draw_func(move |_, cr, _width, _height| {
-        cr.set_source_rgba(0.0, 0.0, 0.0, 0.0);
-        cr.set_operator(gtk::cairo::Operator::Clear);
-        cr.rectangle(0.0, 0.0, _width as f64, _height as f64);
-        let _ = cr.paint_with_alpha(1.0);
-    });
-    Ok(())
 }

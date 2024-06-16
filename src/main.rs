@@ -7,6 +7,7 @@ mod state;
 mod window_manager;
 mod window;
 mod utils;
+mod settings;
 
 use adw::prelude::*;
 use gtk::{ gio, glib };

@@ -23,11 +23,4 @@ O aplicativo usa Libadwaita então é necessário instala-lo no sistema. Para is
 pacman -Syu mingw-w64-x86_64-libadwaita mingw-w64-i686-libadwaita
 ```
 
-Ou pode seguir o [guia](https://gtk-rs.org/gtk4-rs/stable/latest/book/libadwaita.html#windows).  
-Por enquanto é necessário carregar o arquivo de configuração.
-
-```sh
-mkdir C:/ProgramData/glib-2.0/schemas/
-cp org.caioxcezar.settings_gt.gschema.xml C:/ProgramData/glib-2.0/schemas/
-glib-compile-schemas C:/ProgramData/glib-2.0/schemas/
-```
+Ou pode seguir o [guia](https://gtk-rs.org/gtk4-rs/stable/latest/book/libadwaita.html#windows).

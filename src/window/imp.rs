@@ -1,8 +1,7 @@
 use std::cell::RefCell;
 
-use crate::{ profile_object::{ ProfileData, ProfileObject }, state, utils };
+use crate::{ profile_object::{ ProfileData, ProfileObject }, settings::Settings, state, utils };
 use adw::subclass::prelude::*;
-use gio::Settings;
 use glib::subclass::InitializingObject;
 use gtk::{ gio, glib, CompositeTemplate, prelude::ListModelExtManual };
 use headless_chrome::Browser;
@@ -13,7 +12,7 @@ use std::fs;
 #[derive(CompositeTemplate, Default)]
 #[template(resource = "/org/caioxcezar/game_translator/window.ui")]
 pub struct Window {
-    pub settings: OnceCell<Settings>,
+    pub settings: RefCell<Settings>,
     #[template_child]
     pub stack: TemplateChild<gtk::Stack>,
     #[template_child]
@@ -100,6 +99,8 @@ impl WindowImpl for Window {
             let file = fs::File::create(path).expect("Could not create json file");
             serde_json::to_writer(file, &backup_data).expect("Could not write data to json file");
         }
+
+        let _ = self.obj().settings().update_json();
 
         self.parent_close_request()
     }

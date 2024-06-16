@@ -211,10 +211,18 @@
                         <child>
                           <object class="GtkButton" id="action_button">
                             <property name="margin-top">5</property>
-                            <property name="margin-bottom">10</property>
                             <property name="label">Start</property>
                             <property name="tooltip-text" translatable="yes">Start</property>
                             <property name="action-name">win.on-action</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkButton">
+                            <property name="margin-top">5</property>
+                            <property name="margin-bottom">10</property>
+                            <property name="label">Remove</property>
+                            <property name="tooltip-text" translatable="yes">Remove this current profile</property>
+                            <property name="action-name">win.remove-profile</property>
                           </object>
                         </child>
                       </object>

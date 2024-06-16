@@ -48,3 +48,11 @@ pub fn data_path() -> Result<PathBuf, anyhow::Error> {
     path.push("data.json");
     Ok(path)
 }
+
+pub fn settings_path() -> Result<PathBuf, anyhow::Error> {
+    let mut path = glib::user_data_dir();
+    path.push(APP_ID);
+    std::fs::create_dir_all(&path)?;
+    path.push("settings.json");
+    Ok(path)
+}
