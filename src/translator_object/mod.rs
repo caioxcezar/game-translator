@@ -221,7 +221,6 @@ impl TranslatorData {
                 translated_text.push_str(&txt);
             }
         }
-        tab.close(true)?;
         Ok(translated_text)
     }
 
