@@ -545,9 +545,10 @@ impl Window {
                 window.draw_rectagles(rectagles);
 
                 if let Ok(profile) = window.selected_profile() {
-                    let list_store = ListStore::new::<AreaObject>();
-                    list_store.extend_from_slice(&areas.into_iter().map(AreaObject::from_area_data).collect::<Vec<AreaObject>>());
-                    profile.set_areas(list_store);
+                    profile.areas().remove_all();
+                    for area in &areas {
+                        profile.areas().append(&AreaObject::from_area_data(area.clone()));
+                    }
                 }
             })
         );
