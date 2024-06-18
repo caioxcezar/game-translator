@@ -35,6 +35,9 @@ jobs:
       - name: Build GTK 4
         run: gvsbuild build gtk4
 
+      - name: Build Libadwaita
+        run: gvsbuild build libadwaita librsvg
+
       - name: Build project
         run: |
           $Env:PKG_CONFIG_PATH = "C:\gtk-build\gtk\x64\release\lib\pkgconfig"
