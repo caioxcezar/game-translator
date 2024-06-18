@@ -45,27 +45,27 @@ jobs:
           $env:LIB = "C:\gtk-build\gtk\x64\release\lib;" + $env:LIB
           cargo build --release
 
-    - name: Version
-      run: (Get-Content -Path .\Cargo.toml | Select-Object -Index 2) -replace '[^0-9.]'
-      id: version
+      - name: Version
+        run: (Get-Content -Path .\Cargo.toml | Select-Object -Index 2) -replace '[^0-9.]'
+        id: version
 
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.sha }}
-        release_name: ${{ steps.version.outputs.version }}
-        draft: false
-        prerelease: false
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.sha }}
+          release_name: ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
 
-    - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: target/release/game-translator.exe
-        asset_name: game-translator.exe
-        asset_content_type: application/octet-stream
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: target/release/game-translator.exe
+          asset_name: game-translator.exe
+          asset_content_type: application/octet-stream
