@@ -1,0 +1,35 @@
+name: Rust Build and Release (Windows)
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: stable-msvc
+          toolchain: stable
+
+      - name: Build GTK 4
+        run: gvsbuild build gtk4
+
+      - name: Build project
+        run: |
+          $Env:PKG_CONFIG_PATH = "C:\gtk-build\gtk\x64\release\lib\pkgconfig"
+          $env:Path = "C:\gtk-build\gtk\x64\release\bin;" + $env:Path
+          $env:LIB = "C:\gtk-build\gtk\x64\release\lib;" + $env:LIB
+          cargo build --release
+
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: my-rust-app-${{ github.sha }}
+          path: target/release/game-translator.exe
