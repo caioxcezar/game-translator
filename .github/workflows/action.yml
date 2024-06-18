@@ -15,8 +15,8 @@ jobs:
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
-          profile: stable-msvc
-          toolchain: stable
+          profile: minimal
+          toolchain: stable-msvc
 
       - name: Build GTK 4
         run: gvsbuild build gtk4
