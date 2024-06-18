@@ -20,10 +20,17 @@ jobs:
 
       - name: Prerequisites gvsbuild
         run: |
-          winget install --id Git.Git -e --source winget
-          winget install --id MSYS2.MSYS2 -e --source winget
-          winget install Microsoft.VisualStudio.2022.BuildTools -e --source winget --silent --override "--wait --quiet --add ProductLang En-us --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
-          winget install --id Python.Python.3.12 -e --source winget
+          Set-ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          choco install git -y
+          choco install msys2 -y
+          choco install visualstudio2022-workload-vctools -y
+          choco install python312 -y
+
+      - name: Install gvsbuild
+        run: |
+          py -3.12 -m pip install --user pipx
+          py -3.12 -m pipx ensurepath
+          pipx install gvsbuild
 
       - name: Build GTK 4
         run: gvsbuild build gtk4
