@@ -18,6 +18,13 @@ jobs:
           profile: minimal
           toolchain: stable-msvc
 
+      - name: Prerequisites gvsbuild
+        run: |
+          winget install --id Git.Git -e --source winget
+          winget install --id MSYS2.MSYS2 -e --source winget
+          winget install Microsoft.VisualStudio.2022.BuildTools -e --source winget --silent --override "--wait --quiet --add ProductLang En-us --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+          winget install --id Python.Python.3.12 -e --source winget
+
       - name: Build GTK 4
         run: gvsbuild build gtk4
 
