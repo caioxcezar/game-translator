@@ -3,18 +3,69 @@ name: Rust Build and Release (Windows)
 on:
   push:
     branches:
-      - master
+      - dev
 
 jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
+      - name: checkout code
+        uses: actions/checkout@v4
 
-      - name: Version
-        run: echo "0.9.1" >> $ENV:GITHUB_OUTPUT
+      - name: version
+        run: echo "version=$((Get-Content -Path .\Cargo.toml | Select-Object -Index 2) -replace '[^0-9.]')" >> $ENV:GITHUB_OUTPUT
         id: version
 
-      - name: Output Version
-        run: echo ${{ steps.version.outputs.version }}
+      - name: set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable-msvc
+
+      - name: prerequisites gvsbuild
+        run: |
+          Set-ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+          choco install git -y
+          choco install msys2 -y
+          choco install visualstudio2022-workload-vctools -y
+          choco install python312 -y
+
+      - name: install gvsbuild
+        run: |
+          py -3.12 -m pip install --user pipx
+          py -3.12 -m pipx ensurepath
+          pipx install gvsbuild
+
+      - name: build gtk 4
+        run: gvsbuild build gtk4
+
+      - name: build Libadwaita
+        run: gvsbuild build libadwaita librsvg
+
+      - name: build project
+        run: |
+          $Env:PKG_CONFIG_PATH = "C:\gtk-build\gtk\x64\release\lib\pkgconfig"
+          $env:Path = "C:\gtk-build\gtk\x64\release\bin;" + $env:Path
+          $env:LIB = "C:\gtk-build\gtk\x64\release\lib;" + $env:LIB
+          cargo rustc --release -- -C link-args=-mwindows
+
+      - name: create release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          release_name: ${{ steps.version.outputs.version }}
+          draft: true
+          prerelease: false
+
+      - name: upload release asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: target/release/game-translator.exe
+          asset_name: game-translator.exe
+          asset_content_type: application/octet-stream
