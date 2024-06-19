@@ -46,7 +46,7 @@ jobs:
           cargo build --release
 
       - name: Version
-        run: (Get-Content -Path .\Cargo.toml | Select-Object -Index 2) -replace '[^0-9.]'
+        run: (Get-Content -Path .\Cargo.toml | Select-Object -Index 2) -replace '[^0-9.]' >> $ENV:GITHUB_OUTPUT
         id: version
 
       - name: Create Release
