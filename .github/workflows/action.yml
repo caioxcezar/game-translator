@@ -10,14 +10,14 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: version
         run: echo "version=$((Get-Content -Path .\Cargo.toml | Select-Object -Index 2) -replace '[^0-9.]')" >> $ENV:GITHUB_OUTPUT
         id: version
 
       - name: body
-        run: git log --oneline | where { $_ -like "*feat*"-or $_ -like "*fix*" } | out-file ./body.txt -encoding utf8
+        run: git log --oneline | where { $_ -like "*feat*"-or $_ -like "*fix*" }
         id: body
 
       - name: create release
@@ -26,8 +26,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
         with:
-          tag_name: $version
-          release_name: $version
-          body_path: ./body.txt
+          tag_name: ${{ steps.version.outputs.version }}
+          release_name: ${{ steps.version.outputs.version }}
           draft: true
           prerelease: false
