@@ -17,7 +17,7 @@ jobs:
         id: version
 
       - name: body
-        run: echo "body="(git log --oneline | where { $_ -like "*feat*"-or $_ -like "*fix*" }) >> $ENV:GITHUB_OUTPUT
+        run: git log --oneline | where { $_ -like "*feat*"-or $_ -like "*fix*" } >> body.txt
         id: body
 
       - name: create release
@@ -28,6 +28,6 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.version }}
           release_name: ${{ steps.version.outputs.version }}
-          body: ${{ steps.body.outputs.body }}
+          body_path: body.txt
           draft: true
           prerelease: false
