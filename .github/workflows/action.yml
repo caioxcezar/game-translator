@@ -9,6 +9,9 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
       - name: Version
         run: (Get-Content -Path .\Cargo.toml | Select-Object -Index 2) -replace '[^0-9.]' >> $ENV:GITHUB_OUTPUT
         id: version
