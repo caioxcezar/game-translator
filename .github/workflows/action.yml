@@ -28,6 +28,6 @@ jobs:
         with:
           tag_name: ${{ steps.version.outputs.version }}
           release_name: ${{ steps.version.outputs.version }}
-          body_path: body.txt
+          body_path: ./body.txt
           draft: true
           prerelease: false
