@@ -13,7 +13,7 @@ jobs:
         uses: actions/checkout@v2
 
       - name: version
-        run: echo "version=$((Get-Content -Path .\Cargo.toml | Select-Object -Index 2) -replace '[^0-9.]')" >> $GITHUB_OUTPUT
+        run: echo "version=$((Get-Content -Path .\Cargo.toml | Select-Object -Index 2) -replace '[^0-9.]')" >> $ENV:GITHUB_OUTPUT
         id: version
 
       - name: create release
