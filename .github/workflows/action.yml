@@ -16,10 +16,6 @@ jobs:
         run: echo "version=$((Get-Content -Path .\Cargo.toml | Select-Object -Index 2) -replace '[^0-9.]')" >> $ENV:GITHUB_OUTPUT
         id: version
 
-      - name: body
-        run: git log --oneline | where { $_ -like "*feat*"-or $_ -like "*fix*" } >> body.txt
-        id: body
-
       - name: create release
         id: create_release
         uses: actions/create-release@v1
