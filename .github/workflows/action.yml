@@ -9,63 +9,9 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-
-      - name: Set up Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable-msvc
-
-      - name: Prerequisites gvsbuild
-        run: |
-          Set-ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-          choco install git -y
-          choco install msys2 -y
-          choco install visualstudio2022-workload-vctools -y
-          choco install python312 -y
-
-      - name: Install gvsbuild
-        run: |
-          py -3.12 -m pip install --user pipx
-          py -3.12 -m pipx ensurepath
-          pipx install gvsbuild
-
-      - name: Build GTK 4
-        run: gvsbuild build gtk4
-
-      - name: Build Libadwaita
-        run: gvsbuild build libadwaita librsvg
-
-      - name: Build project
-        run: |
-          $Env:PKG_CONFIG_PATH = "C:\gtk-build\gtk\x64\release\lib\pkgconfig"
-          $env:Path = "C:\gtk-build\gtk\x64\release\bin;" + $env:Path
-          $env:LIB = "C:\gtk-build\gtk\x64\release\lib;" + $env:LIB
-          cargo build --release
-
       - name: Version
         run: (Get-Content -Path .\Cargo.toml | Select-Object -Index 2) -replace '[^0-9.]' >> $ENV:GITHUB_OUTPUT
         id: version
 
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
-        with:
-          tag_name: ${{ steps.version.outputs.version }}
-          release_name: ${{ steps.version.outputs.version }}
-          draft: false
-          prerelease: false
-
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: target/release/game-translator.exe
-          asset_name: game-translator.exe
-          asset_content_type: application/octet-stream
+      - name: Output Version
+        run: echo ${{ steps.version.outputs.version }}
