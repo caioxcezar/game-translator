@@ -1,4 +1,4 @@
-# Game Translator (WIP)
+# Game Translator
 
 Aplicação para tradução de aplicativos através de OCR (Reconhecimento ótico de caracteres)
 
@@ -12,7 +12,8 @@ A aplicação atualmente necessita da fonte [Sarasa Gothic](https://github.com/b
 - [x] Traduzir áreas selecionadas na aplicação escolhida
 - [x] Traduzir toda na aplicação selecionada
 - [x] Criação de perfis
-- [ ] Fazer com que texto se encaixe na área devida
+- [x] Fazer com que texto se encaixe na área devida
+- [ ] Selectionar Monitor para tradução
 
 ## Desenvolvimento
 
