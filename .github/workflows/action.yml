@@ -3,7 +3,10 @@ name: Rust Build and Release (Windows)
 on:
   push:
     branches:
-      - master
+      - dev
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -48,12 +51,26 @@ jobs:
           $env:Path = "C:\gtk-build\gtk\x64\release\bin;" + $env:Path
           $env:LIB = "C:\gtk-build\gtk\x64\release\lib;" + $env:LIB
           cargo rustc --release -- -C link-args=-mwindows
+      
+      - name: move exe to bin folder
+        run: Copy-Item -Path target/release/game-translator.exe -Destination "C:\gtk-build\gtk\x64\release\bin"
+
+      - name: create shortcut in release root
+        run: |
+          $WshShell = New-Object -ComObject WScript.Shell
+          $Shortcut = $WshShell.CreateShortcut("C:\gtk-build\gtk\x64\release\game-translator.lnk")
+          $Shortcut.TargetPath = "C:\gtk-build\gtk\x64\release\bin\game-translator.exe"
+          $Shortcut.WorkingDirectory = "C:\gtk-build\gtk\x64\release\bin"
+          $Shortcut.Save()
+
+      - name: create installer (zip release folder)
+        run: Compress-Archive -Path "C:\gtk-build\gtk\x64\release\*" -DestinationPath installer.zip
 
       - name: create release
         id: create_release
         uses: actions/create-release@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ steps.version.outputs.version }}
           release_name: ${{ steps.version.outputs.version }}
@@ -63,9 +80,9 @@ jobs:
       - name: upload release asset
         uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: target/release/game-translator.exe
-          asset_name: game-translator.exe
-          asset_content_type: application/octet-stream
+          asset_path: installer.zip
+          asset_name: game-translator-installer.zip
+          asset_content_type: application/zip
