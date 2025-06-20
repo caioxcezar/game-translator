@@ -32,7 +32,7 @@ jobs:
           choco install msys2 -y
           choco install visualstudio2022-workload-vctools -y
           choco install python312 -y
-          choco install nsis4 -y
+          choco install nsis -y
 
       - name: install gvsbuild
         run: |
