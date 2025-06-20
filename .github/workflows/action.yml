@@ -70,23 +70,13 @@ jobs:
       - name: compile installer with NSIS
         run: makensis installer.nsi
 
-      - name: create release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: release with asset
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
-          release_name: ${{ steps.version.outputs.version }}
+          name: ${{ steps.version.outputs.version }}
           draft: true
           prerelease: false
-
-      - name: upload release asset
-        uses: actions/upload-release-asset@v1
+          files: installer.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: installer.exe
-          asset_name: game-translator-installer.exe
-          asset_content_type: application/octet-stream
