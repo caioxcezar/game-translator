@@ -46,6 +46,17 @@ jobs:
       - name: build Libadwaita
         run: gvsbuild build libadwaita librsvg
 
+      - name: cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\Users\runneradmin\.cargo\registry
+            C:\Users\runneradmin\.cargo\git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
       - name: build project
         run: |
           $Env:PKG_CONFIG_PATH = "C:\gtk-build\gtk\x64\release\lib\pkgconfig"
@@ -53,41 +64,9 @@ jobs:
           $env:LIB = "C:\gtk-build\gtk\x64\release\lib;" + $env:LIB
           cargo rustc --release -- -C link-args=-mwindows
 
-      - name: create NSIS installer script
-        run: |
-          Set-Content -Path installer.nsi -Value @"
-          Name "Game Translator"
-          OutFile "installer.exe"
-          InstallDir "$PROGRAMFILES\Game Translator"
-          RequestExecutionLevel admin
-          SetCompress auto
-          SetCompressor lzma
-
-          Page directory
-          Page instfiles
-          UninstPage uninstConfirm
-          UninstPage instfiles
-
-          Section "Install"
-            SetOutPath $INSTDIR
-            File /r "C:\gtk-build\gtk\x64\release\bin\*.*"
-
-            CreateShortCut "$DESKTOP\Game Translator.lnk" "$INSTDIR\game-translator.exe"
-            CreateDirectory "$SMPROGRAMS\Game Translator"
-            CreateShortCut "$SMPROGRAMS\Game Translator\Game Translator.lnk" "$INSTDIR\game-translator.exe"
-            WriteUninstaller "$INSTDIR\Uninstall.exe"
-          SectionEnd
-
-          Section "Uninstall"
-            Delete "$DESKTOP\Game Translator.lnk"
-            Delete "$SMPROGRAMS\Game Translator\Game Translator.lnk"
-            RMDir "$SMPROGRAMS\Game Translator"
-            Delete "$INSTDIR\game-translator.exe"
-            Delete "$INSTDIR\Uninstall.exe"
-            RMDir /r "$INSTDIR"
-          SectionEnd
-          "@
-
+      - name: move exe to bin folder
+        run: Copy-Item -Path target/release/game-translator.exe -Destination "C:\gtk-build\gtk\x64\release\bin"
+        
       - name: compile installer with NSIS
         run: makensis installer.nsi
 
