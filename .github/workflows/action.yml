@@ -32,6 +32,7 @@ jobs:
           choco install msys2 -y
           choco install visualstudio2022-workload-vctools -y
           choco install python312 -y
+          choco install nsis4 -y
 
       - name: install gvsbuild
         run: |
@@ -51,20 +52,44 @@ jobs:
           $env:Path = "C:\gtk-build\gtk\x64\release\bin;" + $env:Path
           $env:LIB = "C:\gtk-build\gtk\x64\release\lib;" + $env:LIB
           cargo rustc --release -- -C link-args=-mwindows
-      
-      - name: move exe to bin folder
-        run: Copy-Item -Path target/release/game-translator.exe -Destination "C:\gtk-build\gtk\x64\release\bin"
 
-      - name: create shortcut in release root
+      - name: create NSIS installer script
         run: |
-          $WshShell = New-Object -ComObject WScript.Shell
-          $Shortcut = $WshShell.CreateShortcut("C:\gtk-build\gtk\x64\release\game-translator.lnk")
-          $Shortcut.TargetPath = "C:\gtk-build\gtk\x64\release\bin\game-translator.exe"
-          $Shortcut.WorkingDirectory = "C:\gtk-build\gtk\x64\release\bin"
-          $Shortcut.Save()
+          Set-Content -Path installer.nsi -Value @"
+          Name "Game Translator"
+          OutFile "installer.exe"
+          InstallDir "$PROGRAMFILES\Game Translator"
+          RequestExecutionLevel admin
+          SetCompress auto
+          SetCompressor lzma
 
-      - name: create installer (zip release folder)
-        run: Compress-Archive -Path "C:\gtk-build\gtk\x64\release\*" -DestinationPath installer.zip
+          Page directory
+          Page instfiles
+          UninstPage uninstConfirm
+          UninstPage instfiles
+
+          Section "Install"
+            SetOutPath $INSTDIR
+            File /r "C:\gtk-build\gtk\x64\release\bin\*.*"
+
+            CreateShortCut "$DESKTOP\Game Translator.lnk" "$INSTDIR\game-translator.exe"
+            CreateDirectory "$SMPROGRAMS\Game Translator"
+            CreateShortCut "$SMPROGRAMS\Game Translator\Game Translator.lnk" "$INSTDIR\game-translator.exe"
+            WriteUninstaller "$INSTDIR\Uninstall.exe"
+          SectionEnd
+
+          Section "Uninstall"
+            Delete "$DESKTOP\Game Translator.lnk"
+            Delete "$SMPROGRAMS\Game Translator\Game Translator.lnk"
+            RMDir "$SMPROGRAMS\Game Translator"
+            Delete "$INSTDIR\game-translator.exe"
+            Delete "$INSTDIR\Uninstall.exe"
+            RMDir /r "$INSTDIR"
+          SectionEnd
+          "@
+
+      - name: compile installer with NSIS
+        run: makensis installer.nsi
 
       - name: create release
         id: create_release
@@ -83,6 +108,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: installer.zip
-          asset_name: game-translator-installer.zip
-          asset_content_type: application/zip
+          asset_path: installer.exe
+          asset_name: game-translator-installer.exe
+          asset_content_type: application/octet-stream
