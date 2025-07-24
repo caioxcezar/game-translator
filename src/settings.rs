@@ -1,4 +1,4 @@
-use serde::{ Deserialize, Serialize };
+use serde::{Deserialize, Serialize};
 
 use crate::utils;
 use std::fs;
@@ -20,7 +20,11 @@ impl Settings {
     }
 
     pub fn tra_provider(&self) -> &str {
-        if self.tra_provider.is_empty() { "google" } else { &self.tra_provider }
+        if self.tra_provider.is_empty() {
+            "google"
+        } else {
+            &self.tra_provider
+        }
     }
 
     pub fn set(&mut self, prop: &str, value: String) -> Result<(), anyhow::Error> {
@@ -37,7 +41,7 @@ impl Settings {
             &_ => {}
         }
         if let Err(err) = self.update_json() {
-            println!("Failed to update settings: {:?}", err);
+            println!("Failed to update settings: {err:?}");
         }
         Ok(())
     }

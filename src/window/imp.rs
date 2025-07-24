@@ -1,9 +1,13 @@
 use std::cell::RefCell;
 
-use crate::{ profile_object::{ ProfileData, ProfileObject }, settings::Settings, state, utils };
+use crate::{
+    profile_object::{ProfileData, ProfileObject},
+    settings::Settings,
+    state, utils,
+};
 use adw::subclass::prelude::*;
 use glib::subclass::InitializingObject;
-use gtk::{ gio, glib, CompositeTemplate, prelude::ListModelExtManual };
+use gtk::{gio, glib, prelude::ListModelExtManual, CompositeTemplate};
 use once_cell::sync::OnceCell;
 use std::fs;
 // ANCHOR: struct
@@ -93,8 +97,14 @@ impl WindowImpl for Window {
                 .obj()
                 .profiles()
                 .iter::<ProfileObject>()
-                .filter_map(|collection_object| collection_object.ok())
-                .map(|collection_object| collection_object.to_profile_data())
+                .filter_map(Result::ok)
+                .map(|collection_object| {
+                    collection_object.set_app_title(utils::trim_suffix(
+                        &collection_object.app_title(),
+                        " (Closed)",
+                    ));
+                    collection_object.to_profile_data()
+                })
                 .collect::<Vec<ProfileData>>();
 
             let file = fs::File::create(path).expect("Could not create json file");

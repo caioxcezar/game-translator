@@ -1,10 +1,10 @@
 mod imp;
 
+use crate::area_object::AreaData;
+use crate::{screen_object::ScreenData, utils};
 use glib::Object;
 use gtk::glib;
 use rusty_tesseract::Image;
-use crate::area_object::AreaData;
-use crate::{ screen_object::ScreenData, utils };
 
 use crate::translator_object::TranslatorData;
 
@@ -207,7 +207,7 @@ impl OcrData {
     pub fn ocr_areas(
         &self,
         areas: &Vec<AreaData>,
-        screen: &ScreenData
+        screen: &ScreenData,
     ) -> Result<Vec<AreaData>, anyhow::Error> {
         let default_args = rusty_tesseract::Args {
             lang: self.code.to_owned(),
@@ -216,9 +216,14 @@ impl OcrData {
         let mut rects = vec![];
         for path in screen.capture_areas(areas)? {
             let image = Image::from_path(&path)?;
-            let text = rusty_tesseract::image_to_string(&image, &default_args)?.trim().to_string();
+            let text = rusty_tesseract::image_to_string(&image, &default_args)?
+                .trim()
+                .to_string();
             utils::remove_file(&path)?;
-            rects.push(AreaData { text, ..areas[rects.len()].clone() });
+            rects.push(AreaData {
+                text,
+                ..areas[rects.len()].clone()
+            });
         }
         Ok(rects)
     }
@@ -236,7 +241,7 @@ impl OcrData {
         let mut line: AreaData = Default::default();
         for dt in output.data {
             if dt.conf <= 0.0 {
-                if line.text.trim().eq("") {
+                if line.text.trim().is_empty() {
                     continue;
                 }
                 line.text = line.text.trim().to_string();
@@ -244,7 +249,7 @@ impl OcrData {
                 line = Default::default();
                 continue;
             }
-            if line.text.trim().eq("") {
+            if line.text.trim().is_empty() {
                 line.x = dt.left;
                 line.y = dt.top;
             }

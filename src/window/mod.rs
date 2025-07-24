@@ -18,7 +18,7 @@ use glib::{ clone, Object };
 use gtk::{ gio, glib, pango, Expression, PropertyExpression };
 use headless_chrome::Browser;
 use std::{ cell::RefMut, thread };
-use anyhow::Context;
+use anyhow::{Context, Result};
 
 glib::wrapper! {
     pub struct Window(ObjectSubclass<imp::Window>)
@@ -64,19 +64,16 @@ impl Window {
         Err(anyhow::anyhow!("No OCR language selected"))
     }
 
-    fn screen_data(&self) -> Result<ScreenData, anyhow::Error> {
-        let screen = self.imp().dd_screen.selected_item().and_downcast::<ScreenObject>();
-        if let Some(screen) = screen {
-            return Ok(ScreenData {
-                id: screen.id(),
-                app_name: screen.app_name(),
-                title: screen.title(),
-            });
-        }
-        Err(anyhow::anyhow!("No screen selected"))
+    fn screen_data(&self) -> Result<ScreenData> {
+        let screen = self.imp().dd_screen.selected_item().and_downcast::<ScreenObject>().expect("No screen selected");
+        Ok(ScreenData {
+            id: screen.id(),
+            app_name: screen.app_name(),
+            title: screen.title(),
+        })
     }
 
-    fn translator_data(&self) -> Result<TranslatorData, anyhow::Error> {
+    fn translator_data(&self) -> Result<TranslatorData> {
         let lang = self.imp().dd_translation.selected_item().and_downcast::<TranslatorObject>();
         if let Some(lang) = lang {
             return Ok(TranslatorData { code: lang.code(), language: lang.language() });
@@ -84,7 +81,7 @@ impl Window {
         Err(anyhow::anyhow!("No translation language selected"))
     }
 
-    fn translation_areas(&self) -> Result<Vec<AreaData>, anyhow::Error> {
+    fn translation_areas(&self) -> Result<Vec<AreaData>> {
         let areas = self
             .selected_profile()?
             .areas()
@@ -146,7 +143,8 @@ impl Window {
             clone!(@weak self as window => move |drop_down| {
                 if let Some(app) = drop_down.selected_item().and_downcast::<ScreenObject>() {
                     if let Ok(profile) = window.selected_profile() {
-                        profile.set_app(app.app_name());
+                        profile.set_app_name(app.app_name());
+                        profile.set_app_title(app.title());
                     }
                 }
         })
@@ -185,7 +183,11 @@ impl Window {
 
         self.add_simple_action(
             "refresh-windows",
-            clone!(@weak self as window => move |_, _| window.setup_dd_screen())
+            clone!(@weak self as window => move |_, _| {
+                if let Err(err) = window.setup_dd_screen() {
+                    window.dialog("Failed to load applications", &err.to_string());
+                }
+            })
         );
     }
 
@@ -236,7 +238,7 @@ impl Window {
     fn setup_data(&self) {
         self.setup_dd_ocr();
         self.setup_dd_translation();
-        self.setup_dd_screen();
+        let _ = self.setup_dd_screen();
 
         self.navigate("main");
     }
@@ -260,7 +262,7 @@ impl Window {
             Err(value) =>
                 self.dialog(
                     "Can't find languages for translation",
-                    &format!("{}\r\nPossible cause of the problem: Tesseract is not installed in your system. Please follow the instructions at https://tesseract-ocr.github.io/tessdoc/Installation.html", value)
+                    &format!("{value}\r\nPossible cause of the problem: Tesseract is not installed in your system. Please follow the instructions at https://tesseract-ocr.github.io/tessdoc/Installation.html")
                 ),
         }
     }
@@ -280,22 +282,8 @@ impl Window {
         self.imp().dd_translation.set_model(Some(&list));
     }
 
-    fn setup_dd_screen(&self) {
-        let list = ListStore::new::<ScreenObject>();
-        if let Ok(windows) = xcap::Window::all() {
-            for win in windows {
-                let title = win.title().to_string();
-                if title.is_empty() {
-                    continue;
-                }
-                let title = if title.is_char_boundary(70) {
-                    format!("{}...", &utils::split_utf8(&title, 0, 67))
-                } else {
-                    title
-                };
-                list.append(&ScreenObject::new(win.id(), win.app_name().to_string(), title));
-            }
-        }
+    fn setup_dd_screen(&self) -> Result<()> {
+        let list = open_windows()?;
 
         let expression = PropertyExpression::new(
             ScreenObject::static_type(),
@@ -305,6 +293,8 @@ impl Window {
 
         self.imp().dd_screen.set_expression(Some(expression));
         self.imp().dd_screen.set_model(Some(&list));
+
+        Ok(())
     }
 
     fn dialog(&self, message: &str, detail: &str) {
@@ -335,7 +325,7 @@ impl Window {
             self.imp().profiles.get(),
             clone!(@weak self as window => @default-panic, move |obj| {
                 let collection_object = obj
-                    .downcast_ref()
+                    .downcast_ref::<ProfileObject>()
                     .expect("The object should be of type `ProfileObject`.");
                 let row = window.create_collection_row(collection_object);
                 row.upcast()
@@ -344,10 +334,8 @@ impl Window {
 
         self.imp().profiles_list.connect_row_selected(
             clone!(@weak self as window => move |_, row| {
-                if row.is_none() {
-                    return;
-                }
-                let _ = (|| -> Result<(), anyhow::Error> {
+                if row.is_none() { return; }
+                let _ = (|| -> Result<()> {
                     let index = row.context("Failed to get selected row")?.index();
                     let profile = window.profile(index as u32)?.to_profile_data();
                     let obj = window.imp();
@@ -370,20 +358,32 @@ impl Window {
 
                     obj.chk_full_screen.set_active(profile.use_areas);
 
-                    window.setup_dd_screen();
+                    let _ = window.setup_dd_screen();
                     let model = obj.dd_screen.model().expect("Failed to get model");
+                    let mut not_found = true;
                     for i in 0..model.n_items() {
                         let item = model.item(i).expect("Failed to get item");
                         if item
                             .downcast::<ScreenObject>()
                             .expect("Failed to downcast item")
                             .app_name()
-                            .eq(&profile.app)
+                            .eq(&profile.app_name)
                         {
                             obj.dd_screen.set_selected(i);
+                            not_found = false;
                             break;
                         }
                     }
+
+                    if not_found {
+                        if let Some(model) = obj.dd_screen.model() {
+                            let liststore = model.downcast_ref::<ListStore>().expect("Não é possível obter a lista de aplicativos");
+                            let title = format!("{} (Closed)", utils::truncate_string(&profile.app_title, 61));
+                            liststore.insert(0, &ScreenObject::new(u32::MAX, profile.app_name.to_string(), title));
+                            obj.dd_screen.set_selected(0);
+                        }
+                    }
+                    
                     Ok(())
                 })();
         })
@@ -450,7 +450,8 @@ impl Window {
         self.profiles().append(
             &ProfileObject::from_profile_data(ProfileData {
                 title: "[New Profile]".to_string(),
-                app: self.screen_data()?.app_name,
+                app_name: self.screen_data()?.app_name,
+                app_title: self.screen_data()?.title,
                 language: ocr_lang.to_string(),
                 translation: tra_lang.to_string(),
                 use_areas: self.imp().chk_full_screen.is_active(),
@@ -583,6 +584,10 @@ impl Window {
             self.dialog("Still Running", "Please wait until the previous translation is finished.");
             return self.current_state();
         }
+        if let Err(err) = self.check_application() {
+            self.dialog("Application not valid", &err.to_string());
+            return self.current_state();
+        }
         self.open_overlay_page(true);
         if let Err(err) = self.text_overlay() {
             self.dialog("Text Overlay Error", &err.to_string());
@@ -590,6 +595,26 @@ impl Window {
         } else {
             State::Started
         }
+    }
+
+    fn check_application(&self) -> Result<()> {
+        let ocr = self.screen_data()?;
+
+        let list = open_windows()?;
+        for i in 0..list.n_items() {
+            let item = list.item(i).expect("Failed to get item");
+            let item = item.downcast::<ScreenObject>().expect("Failed to downcast item");
+            
+            if item.app_name().eq(&ocr.app_name) {
+                let dd_screen = &self.imp().dd_screen;
+                dd_screen.set_model(Some(&list));
+                dd_screen.set_selected(i);
+                
+                return Ok(())
+            }
+        }
+
+        Err(anyhow::anyhow!("Please open the application before running."))
     }
 
     fn stop(&self) -> State {
@@ -654,15 +679,18 @@ impl Window {
 
         let (sender, receiver) = async_channel::bounded(1);
         thread::spawn(move || {
-            let res = (|| -> Result<Vec<AreaData>, anyhow::Error> {
+            let res = (|| -> Result<Vec<AreaData>> {
                 // TODO remove the necessite of this
                 // Tried to create a OneCell ate Window but i kept getting the error: unable to make method calls because underlying connection is closed
-                let browser = Browser::default()?;
                 let texts = if is_areas {
                     ocr.ocr_areas(&areas, &screen)
                 } else {
                     ocr.ocr_screen(&screen)
                 };
+                
+                if translator.code.eq("nt") { return texts; }
+
+                let browser = Browser::default()?;
                 let tab = browser.new_tab()?;
                 translator.translate_from_ocr(&tab, &ocr, &provider, texts?)
             })();
@@ -764,4 +792,16 @@ fn draw_text_with_outline(cr: &gtk::cairo::Context, x: f64, y: f64, text: &str) 
     cr.move_to(x, y);
     cr.set_source_rgba(255.0, 255.0, 255.0, 1.0);
     let _ = cr.show_text(text);
+}
+
+fn open_windows() -> Result<ListStore> {
+    let list = ListStore::new::<ScreenObject>();
+    let windows = xcap::Window::all()?;
+    for win in windows {
+        if win.title().is_err() || win.title()?.is_empty() { continue; }
+        let title = utils::truncate_string(&win.title()?, 70);
+
+        list.append(&ScreenObject::new(win.id()?, win.app_name()?, title));
+    }
+    Ok(list)
 }

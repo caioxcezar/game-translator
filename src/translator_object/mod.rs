@@ -2,11 +2,12 @@ mod imp;
 
 use std::sync::Arc;
 
+use anyhow::Result;
 use glib::Object;
 use gtk::glib;
 use headless_chrome::Tab;
 
-use crate::{ area_object::AreaData, ocr_object::OcrData };
+use crate::{area_object::AreaData, ocr_object::OcrData};
 
 glib::wrapper! {
     pub struct TranslatorObject(ObjectSubclass<imp::TranslatorObject>);
@@ -15,7 +16,10 @@ glib::wrapper! {
 impl TranslatorObject {
     pub fn new(code: String) -> Self {
         let land_data = TranslatorData::new(&code);
-        Object::builder().property("code", code).property("language", land_data.language).build()
+        Object::builder()
+            .property("code", code)
+            .property("language", land_data.language)
+            .build()
     }
 }
 #[derive(Default, Clone)]
@@ -29,7 +33,11 @@ impl TranslatorData {
         let lang = TranslatorData::all_languages()
             .into_iter()
             .find_map(|t_data| {
-                if t_data.code.eq(code) { Some(t_data) } else { None }
+                if t_data.code.eq(code) {
+                    Some(t_data)
+                } else {
+                    None
+                }
             });
         lang.unwrap()
     }
@@ -37,8 +45,8 @@ impl TranslatorData {
     pub fn all_languages() -> [TranslatorData; 30] {
         [
             TranslatorData {
-                code: "auto".to_owned(),
-                language: "Detect language".to_owned(),
+                code: "nt".to_owned(),
+                language: "No Translation".to_owned(),
             },
             TranslatorData {
                 code: "bg".to_owned(),
@@ -164,8 +172,8 @@ impl TranslatorData {
         browser: &Arc<Tab>,
         ocr: &OcrData,
         provider: &str,
-        texts: Vec<AreaData>
-    ) -> Result<Vec<AreaData>, anyhow::Error> {
+        texts: Vec<AreaData>,
+    ) -> Result<Vec<AreaData>> {
         let mut texts = texts;
         if texts.is_empty() {
             return Ok(texts);
@@ -190,11 +198,12 @@ impl TranslatorData {
         browser: &Arc<Tab>,
         source: &str,
         provider: &str,
-        text: &str
-    ) -> Result<String, anyhow::Error> {
+        text: &str,
+    ) -> Result<String> {
         match provider {
-            "google" =>
-                self.translate_from_google(browser, &self.code, source, &urlencoding::encode(text)),
+            "google" => {
+                self.translate_from_google(browser, &self.code, source, &urlencoding::encode(text))
+            }
             _ => self.translate_from_deepl(browser, &self.code, source, &urlencoding::encode(text)),
         }
     }
@@ -204,8 +213,8 @@ impl TranslatorData {
         tab: &Arc<Tab>,
         target: &str,
         source: &str,
-        text: &str
-    ) -> Result<String, anyhow::Error> {
+        text: &str,
+    ) -> Result<String> {
         let url = format!(
             "https://deepl.com/en/translator#{}/{}/{}",
             source,
@@ -225,8 +234,8 @@ impl TranslatorData {
         tab: &Arc<Tab>,
         target: &str,
         source: &str,
-        text: &str
-    ) -> Result<String, anyhow::Error> {
+        text: &str,
+    ) -> Result<String> {
         let url = format!(
             "https://translate.google.com.br/?sl={}&tl={}&text=${}&op=translate",
             source,

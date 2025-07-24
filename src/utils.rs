@@ -1,6 +1,6 @@
-use std::{ env, fs, path::PathBuf, str::Lines };
 use anyhow::Context;
 use gtk::glib;
+use std::{env, fs, path::PathBuf, str::Lines};
 
 use crate::APP_ID;
 
@@ -9,7 +9,12 @@ pub fn value_in_range(value: i32, min: i32, max: i32) -> bool {
 }
 
 pub fn split_utf8(text: &str, start: usize, end: usize) -> String {
-    text.chars().take(end).skip(start).collect::<String>().trim().to_owned()
+    text.chars()
+        .take(end)
+        .skip(start)
+        .collect::<String>()
+        .trim()
+        .to_owned()
 }
 
 pub fn temp_path() -> Result<String, anyhow::Error> {
@@ -55,4 +60,20 @@ pub fn settings_path() -> Result<PathBuf, anyhow::Error> {
     std::fs::create_dir_all(&path)?;
     path.push("settings.json");
     Ok(path)
+}
+
+pub fn truncate_string(string: &str, size: usize) -> String {
+    if string.is_char_boundary(size) {
+        format!("{}...", split_utf8(string, 0, size - 3))
+    } else {
+        string.to_string()
+    }
+}
+
+pub fn trim_suffix(input: &str, suffix: &str) -> String {
+    if let Some(stripped) = input.strip_suffix(suffix) {
+        stripped.to_string()
+    } else {
+        input.to_string()
+    }
 }

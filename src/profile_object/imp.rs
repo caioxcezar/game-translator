@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use glib::Properties;
-use gtk::{ gio, glib };
+use gtk::{gio, glib};
 use std::cell::OnceCell;
 
 #[derive(Properties, Default)]
@@ -12,7 +12,9 @@ pub struct ProfileObject {
     #[property(get, set)]
     pub title: RefCell<String>,
     #[property(get, set)]
-    pub app: RefCell<String>,
+    pub app_name: RefCell<String>,
+    #[property(get, set)]
+    pub app_title: RefCell<String>,
     #[property(get, set)]
     pub language: RefCell<String>,
     #[property(get, set)]
