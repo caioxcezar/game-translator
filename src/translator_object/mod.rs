@@ -1,13 +1,7 @@
 mod imp;
 
-use std::sync::Arc;
-
-use anyhow::Result;
 use glib::Object;
 use gtk::glib;
-use headless_chrome::Tab;
-
-use crate::{area_object::AreaData, ocr_object::OcrData};
 
 glib::wrapper! {
     pub struct TranslatorObject(ObjectSubclass<imp::TranslatorObject>);
@@ -165,91 +159,5 @@ impl TranslatorData {
                 language: "Ukrainian".to_owned(),
             },
         ]
-    }
-
-    pub fn translate_from_ocr(
-        &self,
-        browser: &Arc<Tab>,
-        ocr: &OcrData,
-        provider: &str,
-        texts: Vec<AreaData>,
-    ) -> Result<Vec<AreaData>> {
-        let mut texts = texts;
-        if texts.is_empty() {
-            return Ok(texts);
-        }
-        let text = texts
-            .iter()
-            .map(|rect| format!("-> {}\n", rect.text))
-            .collect::<Vec<String>>()
-            .join("");
-
-        let text = self.translate(browser, &ocr.to_translator().code, provider, &text)?;
-
-        let _texts = text.split("-> ").collect::<Vec<&str>>();
-        for (i, tx) in _texts.iter().enumerate().skip(1) {
-            texts[i - 1].text = tx.to_string();
-        }
-        Ok(texts)
-    }
-
-    pub fn translate(
-        &self,
-        browser: &Arc<Tab>,
-        source: &str,
-        provider: &str,
-        text: &str,
-    ) -> Result<String> {
-        match provider {
-            "google" => {
-                self.translate_from_google(browser, &self.code, source, &urlencoding::encode(text))
-            }
-            _ => self.translate_from_deepl(browser, &self.code, source, &urlencoding::encode(text)),
-        }
-    }
-
-    pub fn translate_from_deepl(
-        &self,
-        tab: &Arc<Tab>,
-        target: &str,
-        source: &str,
-        text: &str,
-    ) -> Result<String> {
-        let url = format!(
-            "https://deepl.com/en/translator#{}/{}/{}",
-            source,
-            target,
-            text.replace(' ', "%20")
-        );
-        tab.navigate_to(&url)?;
-        tab.wait_until_navigated()?;
-        let translated_text = tab
-            .wait_for_element("[role='textbox'][aria-labelledby='translation-target-heading']")?
-            .get_inner_text()?;
-        Ok(translated_text)
-    }
-
-    pub fn translate_from_google(
-        &self,
-        tab: &Arc<Tab>,
-        target: &str,
-        source: &str,
-        text: &str,
-    ) -> Result<String> {
-        let url = format!(
-            "https://translate.google.com.br/?sl={}&tl={}&text=${}&op=translate",
-            source,
-            target,
-            text.replace(' ', "%20")
-        );
-        tab.navigate_to(&url)?;
-        tab.wait_until_navigated()?;
-        let translated_text = tab
-            .wait_for_elements("[jsname='W297wb']")?
-            .iter()
-            .flat_map(|element| element.get_inner_text())
-            .collect::<Vec<String>>()
-            .join("");
-        Ok(translated_text)
     }
 }

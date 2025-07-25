@@ -76,6 +76,7 @@ impl ObjectImpl for Window {
         obj.setup_actions();
         obj.setup_drag_action();
         obj.setup_profiles();
+        obj.setup_client();
         let _ = obj.restore_data();
     }
 }

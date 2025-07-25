@@ -3,7 +3,7 @@ mod imp;
 use adw::subclass::prelude::*;
 use glib::Object;
 use gtk::glib;
-use serde::{ Deserialize, Serialize };
+use serde::{Deserialize, Serialize};
 
 glib::wrapper! {
     pub struct AreaObject(ObjectSubclass<imp::AreaObject>);
@@ -25,7 +25,13 @@ impl AreaObject {
     }
 
     pub fn from_area_data(area_data: AreaData) -> Self {
-        Self::new(area_data.x, area_data.y, area_data.width, area_data.height, area_data.text)
+        Self::new(
+            area_data.x,
+            area_data.y,
+            area_data.width,
+            area_data.height,
+            area_data.text,
+        )
     }
 }
 

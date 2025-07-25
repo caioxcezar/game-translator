@@ -1,24 +1,26 @@
 mod imp;
 
 use crate::{
-    area_object::{ AreaData, AreaObject },
-    ocr_object::{ OcrData, OcrObject },
-    profile_object::{ ProfileData, ProfileObject },
-    screen_object::{ ScreenData, ScreenObject },
+    area_object::{AreaData, AreaObject},
+    browser::browser_handle::BrowserHandle,
+    ocr_object::{OcrData, OcrObject},
+    profile_object::{ProfileData, ProfileObject},
+    screen_object::{ScreenData, ScreenObject},
     settings::Settings,
     state::State,
-    translator_object::{ TranslatorData, TranslatorObject },
+    translator_object::{TranslatorData, TranslatorObject},
     utils,
     window_manager::sys::WindowManager,
 };
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gio::{ SimpleAction, ListStore };
-use glib::{ clone, Object };
-use gtk::{ gio, glib, pango, Expression, PropertyExpression };
-use headless_chrome::Browser;
-use std::{ cell::RefMut, thread };
 use anyhow::{Context, Result};
+use gio::{ListStore, SimpleAction};
+use glib::{clone, Object};
+use gtk::{gio, glib, pango, Expression, PropertyExpression};
+use once_cell::sync::Lazy;
+use std::{cell::RefMut, thread};
+use tokio::sync::{oneshot, Mutex};
 
 glib::wrapper! {
     pub struct Window(ObjectSubclass<imp::Window>)
@@ -28,6 +30,7 @@ glib::wrapper! {
 }
 
 const WINDOW_NAME: &str = "GT Overlay";
+static BROWSER: Lazy<Mutex<Option<BrowserHandle>>> = Lazy::new(|| Mutex::new(None));
 
 impl Window {
     pub fn new(app: &adw::Application) -> Self {
@@ -39,7 +42,9 @@ impl Window {
         let file = utils::open_file(utils::settings_path().expect("Failed to get settings path"));
         let settings = match file {
             Ok(file) => serde_json::from_reader(file).expect("Failed to read settings file"),
-            Err(_) => Settings { ..Default::default() },
+            Err(_) => Settings {
+                ..Default::default()
+            },
         };
         self.imp().settings.replace(settings);
     }
@@ -52,8 +57,12 @@ impl Window {
         self.imp().state.borrow().clone()
     }
 
-    fn ocr_data(&self) -> Result<OcrData, anyhow::Error> {
-        let lang = self.imp().dd_ocr.selected_item().and_downcast::<OcrObject>();
+    fn ocr_data(&self) -> Result<OcrData> {
+        let lang = self
+            .imp()
+            .dd_ocr
+            .selected_item()
+            .and_downcast::<OcrObject>();
         if let Some(lang) = lang {
             return Ok(OcrData {
                 code: lang.code(),
@@ -65,7 +74,12 @@ impl Window {
     }
 
     fn screen_data(&self) -> Result<ScreenData> {
-        let screen = self.imp().dd_screen.selected_item().and_downcast::<ScreenObject>().expect("No screen selected");
+        let screen = self
+            .imp()
+            .dd_screen
+            .selected_item()
+            .and_downcast::<ScreenObject>()
+            .expect("No screen selected");
         Ok(ScreenData {
             id: screen.id(),
             app_name: screen.app_name(),
@@ -74,9 +88,16 @@ impl Window {
     }
 
     fn translator_data(&self) -> Result<TranslatorData> {
-        let lang = self.imp().dd_translation.selected_item().and_downcast::<TranslatorObject>();
+        let lang = self
+            .imp()
+            .dd_translation
+            .selected_item()
+            .and_downcast::<TranslatorObject>();
         if let Some(lang) = lang {
-            return Ok(TranslatorData { code: lang.code(), language: lang.language() });
+            return Ok(TranslatorData {
+                code: lang.code(),
+                language: lang.language(),
+            });
         }
         Err(anyhow::anyhow!("No translation language selected"))
     }
@@ -95,59 +116,56 @@ impl Window {
     fn setup_actions(&self) {
         let obj = self.imp();
 
-        obj.title.connect_changed(
-            clone!(@weak self as window => move |entry| {
+        obj.title
+            .connect_changed(clone!(@weak self as window => move |entry| {
                 if let Ok(profile) = window.selected_profile() {
                     profile.set_title(entry.text().to_string());
                 }
-            })
-        );
+            }));
 
-        obj.chk_full_screen.connect_toggled(
-            clone!(@weak self as window => move |button| {
-            window.imp().config_button.set_sensitive(!button.is_active());
+        obj.chk_full_screen
+            .connect_toggled(clone!(@weak self as window => move |button| {
+                window.imp().config_button.set_sensitive(!button.is_active());
 
-            if let Ok(profile) = window.selected_profile() {
-                profile.set_use_areas(button.is_active());
-            }
-        })
-        );
+                if let Ok(profile) = window.selected_profile() {
+                    profile.set_use_areas(button.is_active());
+                }
+            }));
 
         obj.dd_translation.connect_selected_item_notify(
             clone!(@weak self as window => move |drop_down| {
-            let tra_obj = drop_down.selected_item().and_downcast::<TranslatorObject>();
-            if let Some(tra_obj) = tra_obj {
-                let _ = window.settings().set("tra-lang", tra_obj.code());
+                let tra_obj = drop_down.selected_item().and_downcast::<TranslatorObject>();
+                if let Some(tra_obj) = tra_obj {
+                    let _ = window.settings().set("tra-lang", tra_obj.code());
 
-                if let Ok(profile) = window.selected_profile() {
-                    profile.set_translation(tra_obj.code());
-                }
-            };
-        })
+                    if let Ok(profile) = window.selected_profile() {
+                        profile.set_translation(tra_obj.code());
+                    }
+                };
+            }),
         );
 
-        obj.dd_ocr.connect_selected_item_notify(
-            clone!(@weak self as window => move |drop_down| {
-            let ocr_obj = drop_down.selected_item().and_downcast::<OcrObject>();
-            if let Some(ocr_obj) = ocr_obj {
-                let _ = window.settings().set("ocr-lang", ocr_obj.code());
+        obj.dd_ocr
+            .connect_selected_item_notify(clone!(@weak self as window => move |drop_down| {
+                let ocr_obj = drop_down.selected_item().and_downcast::<OcrObject>();
+                if let Some(ocr_obj) = ocr_obj {
+                    let _ = window.settings().set("ocr-lang", ocr_obj.code());
 
-                if let Ok(profile) = window.selected_profile() {
-                    profile.set_language(ocr_obj.code());
-                }
-            };
-        })
-        );
+                    if let Ok(profile) = window.selected_profile() {
+                        profile.set_language(ocr_obj.code());
+                    }
+                };
+            }));
 
         obj.dd_screen.connect_selected_item_notify(
             clone!(@weak self as window => move |drop_down| {
-                if let Some(app) = drop_down.selected_item().and_downcast::<ScreenObject>() {
-                    if let Ok(profile) = window.selected_profile() {
-                        profile.set_app_name(app.app_name());
-                        profile.set_app_title(app.title());
+                    if let Some(app) = drop_down.selected_item().and_downcast::<ScreenObject>() {
+                        if let Ok(profile) = window.selected_profile() {
+                            profile.set_app_name(app.app_name());
+                            profile.set_app_title(app.title());
+                        }
                     }
-                }
-        })
+            }),
         );
 
         self.add_simple_action(
@@ -156,29 +174,29 @@ impl Window {
                 if let Err(err) = window.new_profile() {
                     window.error_dialog(&err.to_string());
                 }
-            })
+            }),
         );
 
         self.add_simple_action(
             "translate-image",
-            clone!(@weak self as window => move |_, _| window.navigate("image"))
+            clone!(@weak self as window => move |_, _| window.navigate("image")),
         );
 
         self.set_language_action();
 
         self.add_simple_action(
             "on-action",
-            clone!(@weak self as window => move |_, _| window.on_action())
+            clone!(@weak self as window => move |_, _| window.on_action()),
         );
 
         self.add_simple_action(
             "configure-page",
-            clone!(@weak self as window => move |_, _| window.configure_page())
+            clone!(@weak self as window => move |_, _| window.configure_page()),
         );
 
         self.add_simple_action(
             "remove-profile",
-            clone!(@weak self as window => move |_, _| window.remove_current_profile())
+            clone!(@weak self as window => move |_, _| window.remove_current_profile()),
         );
 
         self.add_simple_action(
@@ -187,14 +205,14 @@ impl Window {
                 if let Err(err) = window.setup_dd_screen() {
                     window.dialog("Failed to load applications", &err.to_string());
                 }
-            })
+            }),
         );
     }
 
     fn add_simple_action<F: Fn(&SimpleAction, std::option::Option<&glib::Variant>) + 'static>(
         &self,
         name: &str,
-        callback: F
+        callback: F,
     ) {
         let action = SimpleAction::new(name, None);
         action.connect_activate(callback);
@@ -205,12 +223,12 @@ impl Window {
         &self,
         name: &str,
         value: &str,
-        f: F
+        f: F,
     ) {
         let action = SimpleAction::new_stateful(
             name,
             Some(glib::VariantTy::STRING),
-            &glib::Variant::from(value)
+            &glib::Variant::from(value),
         );
         action.connect_change_state(f);
         self.add_action(&action);
@@ -227,7 +245,7 @@ impl Window {
                 let str_value = new_value.str().unwrap();
                 let _ = window.settings().set("tra-provider", str_value.to_string());
                 action.set_state(&new_value);
-            })
+            }),
         )
     }
 
@@ -276,7 +294,7 @@ impl Window {
         let expression = PropertyExpression::new(
             TranslatorObject::static_type(),
             Expression::NONE,
-            "language"
+            "language",
         );
         self.imp().dd_translation.set_expression(Some(expression));
         self.imp().dd_translation.set_model(Some(&list));
@@ -285,11 +303,8 @@ impl Window {
     fn setup_dd_screen(&self) -> Result<()> {
         let list = open_windows()?;
 
-        let expression = PropertyExpression::new(
-            ScreenObject::static_type(),
-            Expression::NONE,
-            "title"
-        );
+        let expression =
+            PropertyExpression::new(ScreenObject::static_type(), Expression::NONE, "title");
 
         self.imp().dd_screen.set_expression(Some(expression));
         self.imp().dd_screen.set_model(Some(&list));
@@ -298,8 +313,7 @@ impl Window {
     }
 
     fn dialog(&self, message: &str, detail: &str) {
-        let dialog = gtk::AlertDialog
-            ::builder()
+        let dialog = gtk::AlertDialog::builder()
             .detail(detail)
             .message(message)
             .modal(true)
@@ -309,10 +323,13 @@ impl Window {
 
     // region: Profiles
     fn profiles(&self) -> &ListStore {
-        self.imp().profiles.get().expect("`profiles` should be set in `setup_profiles`.")
+        self.imp()
+            .profiles
+            .get()
+            .expect("`profiles` should be set in `setup_profiles`.")
     }
 
-    fn selected_profile(&self) -> Result<ProfileObject, anyhow::Error> {
+    fn selected_profile(&self) -> Result<ProfileObject> {
         let id = self.current_profile_index();
         let profile_data = self.profile(id)?;
         Ok(profile_data)
@@ -329,7 +346,7 @@ impl Window {
                     .expect("The object should be of type `ProfileObject`.");
                 let row = window.create_collection_row(collection_object);
                 row.upcast()
-            })
+            }),
         );
 
         self.imp().profiles_list.connect_row_selected(
@@ -383,14 +400,25 @@ impl Window {
                             obj.dd_screen.set_selected(0);
                         }
                     }
-                    
+
                     Ok(())
                 })();
         })
         );
     }
 
-    fn restore_data(&self) -> Result<(), anyhow::Error> {
+    fn setup_client(&self) {
+        let rc = tokio::runtime::Runtime::new().unwrap();
+        rc.block_on(async {
+            let mut browser = BROWSER.lock().await;
+            if browser.is_none() {
+                let client = BrowserHandle::new();
+                *browser = Some(client);
+            }
+        });
+    }
+
+    fn restore_data(&self) -> Result<()> {
         let profiles = match utils::open_file(utils::data_path()?) {
             Ok(file) => {
                 let backup_data: Vec<ProfileData> = serde_json::from_reader(file)?;
@@ -417,7 +445,7 @@ impl Window {
         Ok(())
     }
 
-    fn profile(&self, index: u32) -> Result<ProfileObject, anyhow::Error> {
+    fn profile(&self, index: u32) -> Result<ProfileObject> {
         let profile = self
             .profiles()
             .item(index)
@@ -433,7 +461,7 @@ impl Window {
         }
     }
 
-    fn new_profile(&self) -> Result<(), anyhow::Error> {
+    fn new_profile(&self) -> Result<()> {
         let profiles = self.profiles();
         let n_items = profiles.n_items();
         if n_items > 0 {
@@ -447,8 +475,8 @@ impl Window {
         let ocr_lang = settings.ocr_lang();
         let tra_lang = settings.tra_lang();
 
-        self.profiles().append(
-            &ProfileObject::from_profile_data(ProfileData {
+        self.profiles()
+            .append(&ProfileObject::from_profile_data(ProfileData {
                 title: "[New Profile]".to_string(),
                 app_name: self.screen_data()?.app_name,
                 app_title: self.screen_data()?.title,
@@ -456,15 +484,20 @@ impl Window {
                 translation: tra_lang.to_string(),
                 use_areas: self.imp().chk_full_screen.is_active(),
                 areas: vec![],
-            })
-        );
+            }));
         Ok(())
     }
 
     fn create_collection_row(&self, collection_object: &ProfileObject) -> gtk::ListBoxRow {
-        let label = gtk::Label::builder().ellipsize(pango::EllipsizeMode::End).xalign(0.0).build();
+        let label = gtk::Label::builder()
+            .ellipsize(pango::EllipsizeMode::End)
+            .xalign(0.0)
+            .build();
 
-        collection_object.bind_property("title", &label, "label").sync_create().build();
+        collection_object
+            .bind_property("title", &label, "label")
+            .sync_create()
+            .build();
 
         gtk::ListBoxRow::builder().child(&label).build()
     }
@@ -523,7 +556,7 @@ impl Window {
                     x -= width;
                 }
                 let new_rect = AreaData { height, width, x, y, ..Default::default() };
-                
+
                 can_add = can_add && !areas.iter().any(|rect| {
                     let x_overlap = utils::value_in_range(new_rect.x, rect.x, rect.x + rect.width) || utils::value_in_range(rect.x, new_rect.x, new_rect.x + new_rect.width);
                     let y_overlap = utils::value_in_range(new_rect.y, rect.y, rect.y + rect.height) || utils::value_in_range(rect.y, new_rect.y, new_rect.y + new_rect.height);
@@ -547,19 +580,20 @@ impl Window {
     }
 
     fn draw_rectagles(&self, areas: Vec<AreaData>) {
-        self.imp().drawing_area.set_draw_func(move |_, cr, _width, _height| {
-            cr.set_source_rgba(250.0, 0.0, 250.0, 1.0);
-            areas.iter().for_each(|area| {
-                let ret = gtk::gdk::Rectangle::new(area.x, area.y, area.width, area.height);
-                cr.add_rectangle(&ret);
+        self.imp()
+            .drawing_area
+            .set_draw_func(move |_, cr, _width, _height| {
+                cr.set_source_rgba(250.0, 0.0, 250.0, 1.0);
+                areas.iter().for_each(|area| {
+                    let ret = gtk::gdk::Rectangle::new(area.x, area.y, area.width, area.height);
+                    cr.add_rectangle(&ret);
+                });
+                cr.stroke().expect("Invalid cairo surface state");
             });
-            cr.stroke().expect("Invalid cairo surface state");
-        });
     }
 
     fn open_overlay_page(&self, intangible: bool) {
-        let page = gtk::Window
-            ::builder()
+        let page = gtk::Window::builder()
             .title(WINDOW_NAME)
             .name("translation-page")
             .maximized(true)
@@ -581,7 +615,10 @@ impl Window {
 
     fn start(&self) -> State {
         if *self.imp().running.borrow() {
-            self.dialog("Still Running", "Please wait until the previous translation is finished.");
+            self.dialog(
+                "Still Running",
+                "Please wait until the previous translation is finished.",
+            );
             return self.current_state();
         }
         if let Err(err) = self.check_application() {
@@ -603,18 +640,22 @@ impl Window {
         let list = open_windows()?;
         for i in 0..list.n_items() {
             let item = list.item(i).expect("Failed to get item");
-            let item = item.downcast::<ScreenObject>().expect("Failed to downcast item");
-            
+            let item = item
+                .downcast::<ScreenObject>()
+                .expect("Failed to downcast item");
+
             if item.app_name().eq(&ocr.app_name) {
                 let dd_screen = &self.imp().dd_screen;
                 dd_screen.set_model(Some(&list));
                 dd_screen.set_selected(i);
-                
-                return Ok(())
+
+                return Ok(());
             }
         }
 
-        Err(anyhow::anyhow!("Please open the application before running."))
+        Err(anyhow::anyhow!(
+            "Please open the application before running."
+        ))
     }
 
     fn stop(&self) -> State {
@@ -648,7 +689,8 @@ impl Window {
             }
             State::Stopped => {
                 obj.chk_full_screen.set_sensitive(true);
-                obj.config_button.set_sensitive(!obj.chk_full_screen.is_active());
+                obj.config_button
+                    .set_sensitive(!obj.chk_full_screen.is_active());
                 obj.action_button.set_sensitive(true);
                 obj.remove_button.set_sensitive(true);
                 obj.action_button.set_label("Start");
@@ -664,58 +706,85 @@ impl Window {
         obj.state.replace(state);
     }
 
-    fn text_overlay(&self) -> Result<(), anyhow::Error> {
-        self.imp().running.replace(true);
-        self.imp().status_label.set_text("Running");
+    fn text_overlay(&self) -> Result<()> {
+        let obj = self.imp();
+        obj.running.replace(true);
+        obj.status_label.set_text("Running");
 
         let ocr = self.ocr_data()?;
         let is_vertical = ocr.is_vertical;
         let screen = self.screen_data()?;
-        let translator = self.translator_data()?;
+        let translator = self.translator_data()?.code;
         let settings = self.settings();
         let provider = settings.tra_provider().to_string();
         let areas = self.translation_areas()?;
-        let is_areas = !self.imp().chk_full_screen.is_active();
+        let is_areas = !obj.chk_full_screen.is_active();
 
-        let (sender, receiver) = async_channel::bounded(1);
+        let (send, recv) = oneshot::channel();
         thread::spawn(move || {
-            let res = (|| -> Result<Vec<AreaData>> {
-                // TODO remove the necessite of this
-                // Tried to create a OneCell ate Window but i kept getting the error: unable to make method calls because underlying connection is closed
-                let texts = if is_areas {
+            let rc = tokio::runtime::Runtime::new().unwrap();
+            rc.block_on(async {
+                let areas = if is_areas {
                     ocr.ocr_areas(&areas, &screen)
                 } else {
                     ocr.ocr_screen(&screen)
                 };
-                
-                if translator.code.eq("nt") { return texts; }
 
-                let browser = Browser::default()?;
-                let tab = browser.new_tab()?;
-                translator.translate_from_ocr(&tab, &ocr, &provider, texts?)
-            })();
-            let _ = sender.send_blocking(res);
-        });
-
-        glib::spawn_future_local(
-            clone!(@weak self as window => async move {
-                let message = receiver.recv().await;
-                window.imp().running.replace(false);
-                window.imp().status_label.set_text("Idle");
-                if message.is_err() {
-                    window.error_dialog(&message.unwrap_err().to_string());
+                if let Err(err) = areas {
+                    let _ = send.send(Err(anyhow::anyhow!(err.to_string())));
                     return;
                 }
-                let message = message.unwrap();
-                match message {
-                    Ok(texts) => {
-                        let _ = window.draw_text(texts, is_vertical);
-                        if window.current_state() == State::Started { let _ = window.text_overlay(); } 
-                    },
-                    Err(err) => window.error_dialog(&err.to_string()),
+                let mut areas = areas.unwrap();
+
+                let browser = BROWSER.lock().await;
+                let client = browser.as_ref().unwrap();
+                if translator != "nt" {
+                    for area in &mut areas {
+                        let result = match provider.as_str() {
+                            "google" => {
+                                client
+                                    .translate_from_google(
+                                        area.text.clone(),
+                                        ocr.to_translator().code,
+                                        translator.clone(),
+                                    )
+                                    .await
+                            }
+                            _ => {
+                                client
+                                    .translate_from_deepl(
+                                        area.text.clone(),
+                                        ocr.to_translator().code,
+                                        translator.clone(),
+                                    )
+                                    .await
+                            }
+                        };
+                        area.text = result;
+                    }
                 }
-            })
-        );
+
+                let _ = send.send(Ok(areas));
+            });
+        });
+
+        glib::spawn_future_local(clone!(@weak self as window => async move {
+            let message = recv.await;
+            window.imp().running.replace(false);
+            window.imp().status_label.set_text("Idle");
+            if message.is_err() {
+                window.error_dialog(&message.unwrap_err().to_string());
+                return;
+            }
+            let message = message.unwrap();
+            match message {
+                Ok(texts) => {
+                    let _ = window.draw_text(texts, is_vertical);
+                    if window.current_state() == State::Started { let _ = window.text_overlay(); }
+                },
+                Err(err) => window.error_dialog(&err.to_string()),
+            }
+        }));
 
         Ok(())
     }
@@ -725,29 +794,30 @@ impl Window {
         self.dialog("Text Overlay Error", message);
     }
 
-    fn draw_text(&self, texts: Vec<AreaData>, vertical: bool) -> Result<(), anyhow::Error> {
+    fn draw_text(&self, texts: Vec<AreaData>, vertical: bool) -> Result<()> {
         let obj = self.imp();
         obj.drawing_area.queue_draw();
-        obj.drawing_area.set_draw_func(move |_, cr, _width, _height| {
-            cr.select_font_face(
-                "Sarasa Gothic J",
-                gtk::cairo::FontSlant::Normal,
-                gtk::cairo::FontWeight::Normal
-            );
-            cr.set_antialias(gtk::cairo::Antialias::Fast);
+        obj.drawing_area
+            .set_draw_func(move |_, cr, _width, _height| {
+                cr.select_font_face(
+                    "Sarasa Gothic J",
+                    gtk::cairo::FontSlant::Normal,
+                    gtk::cairo::FontWeight::Normal,
+                );
+                cr.set_antialias(gtk::cairo::Antialias::Fast);
 
-            for text in texts.iter() {
-                if text.text.trim().is_empty() {
-                    continue;
+                for text in texts.iter() {
+                    if text.text.trim().is_empty() {
+                        continue;
+                    }
+                    if vertical {
+                        draw_vertical_line(cr, text);
+                    } else {
+                        draw_line(cr, text);
+                    }
                 }
-                if vertical {
-                    draw_vertical_line(cr, text);
-                } else {
-                    draw_line(cr, text);
-                }
-            }
-            cr.stroke().expect("Invalid cairo surface state");
-        });
+                cr.stroke().expect("Invalid cairo surface state");
+            });
         Ok(())
     }
 }
@@ -798,7 +868,9 @@ fn open_windows() -> Result<ListStore> {
     let list = ListStore::new::<ScreenObject>();
     let windows = xcap::Window::all()?;
     for win in windows {
-        if win.title().is_err() || win.title()?.is_empty() { continue; }
+        if win.title().is_err() || win.title()?.is_empty() {
+            continue;
+        }
         let title = utils::truncate_string(&win.title()?, 70);
 
         list.append(&ScreenObject::new(win.id()?, win.app_name()?, title));

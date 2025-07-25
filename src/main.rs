@@ -1,16 +1,17 @@
-mod ocr_object;
-mod translator_object;
-mod screen_object;
-mod profile_object;
 mod area_object;
-mod state;
-mod window_manager;
-mod window;
-mod utils;
+mod browser;
+mod ocr_object;
+mod profile_object;
+mod screen_object;
 mod settings;
+mod state;
+mod translator_object;
+mod utils;
+mod window;
+mod window_manager;
 
 use adw::prelude::*;
-use gtk::{ gio, glib };
+use gtk::{gio, glib};
 use window::Window;
 
 static APP_ID: &str = "org.caioxcezar.game_translator";
@@ -56,6 +57,6 @@ fn load_css() {
     gtk::style_context_add_provider_for_display(
         &gtk::gdk::Display::default().expect("Could not connect to a display."),
         &provider,
-        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
 }

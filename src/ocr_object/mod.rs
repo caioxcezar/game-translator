@@ -2,6 +2,7 @@ mod imp;
 
 use crate::area_object::AreaData;
 use crate::{screen_object::ScreenData, utils};
+use anyhow::Result;
 use glib::Object;
 use gtk::glib;
 use rusty_tesseract::Image;
@@ -204,11 +205,7 @@ impl OcrData {
         }
     }
 
-    pub fn ocr_areas(
-        &self,
-        areas: &Vec<AreaData>,
-        screen: &ScreenData,
-    ) -> Result<Vec<AreaData>, anyhow::Error> {
+    pub fn ocr_areas(&self, areas: &Vec<AreaData>, screen: &ScreenData) -> Result<Vec<AreaData>> {
         let default_args = rusty_tesseract::Args {
             lang: self.code.to_owned(),
             ..Default::default()
@@ -228,7 +225,7 @@ impl OcrData {
         Ok(rects)
     }
 
-    pub fn ocr_screen(&self, screen: &ScreenData) -> Result<Vec<AreaData>, anyhow::Error> {
+    pub fn ocr_screen(&self, screen: &ScreenData) -> Result<Vec<AreaData>> {
         let default_args = rusty_tesseract::Args {
             lang: self.code.to_owned(),
             ..Default::default()
@@ -262,7 +259,7 @@ impl OcrData {
         Ok(texts)
     }
 
-    pub fn ocr_image(&self, path: &str) -> Result<String, anyhow::Error> {
+    pub fn ocr_image(&self, path: &str) -> Result<String> {
         let default_args = rusty_tesseract::Args {
             lang: self.code.to_owned(),
             ..rusty_tesseract::Args::default()

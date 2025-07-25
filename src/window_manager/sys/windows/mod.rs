@@ -3,18 +3,10 @@ pub mod window_manager {
         windows::{
             core::s,
             Win32::{
-                Foundation::{ LPARAM, WPARAM },
+                Foundation::{LPARAM, WPARAM},
                 UI::WindowsAndMessaging::{
-                    FindWindowA,
-                    PostMessageA,
-                    SetWindowLongPtrA,
-                    SetWindowPos,
-                    GWL_EXSTYLE,
-                    HWND_TOPMOST,
-                    SWP_NOACTIVATE,
-                    SWP_NOMOVE,
-                    SWP_NOSIZE,
-                    WM_CLOSE,
+                    FindWindowA, PostMessageA, SetWindowLongPtrA, SetWindowPos, GWL_EXSTYLE,
+                    HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WM_CLOSE,
                 },
             },
         },
@@ -43,7 +35,7 @@ pub mod window_manager {
                 0,
                 0,
                 0,
-                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE
+                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
             );
         }
     }
