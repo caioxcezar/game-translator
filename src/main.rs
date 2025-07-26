@@ -1,10 +1,10 @@
 mod area_object;
-mod browser;
 mod ocr_object;
 mod profile_object;
 mod screen_object;
 mod settings;
 mod state;
+mod translation;
 mod translator_object;
 mod utils;
 mod window;

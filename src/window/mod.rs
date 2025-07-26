@@ -2,12 +2,12 @@ mod imp;
 
 use crate::{
     area_object::{AreaData, AreaObject},
-    browser::browser_handle::BrowserHandle,
     ocr_object::{OcrData, OcrObject},
     profile_object::{ProfileData, ProfileObject},
     screen_object::{ScreenData, ScreenObject},
     settings::Settings,
     state::State,
+    translation,
     translator_object::{TranslatorData, TranslatorObject},
     utils,
     window_manager::sys::WindowManager,
@@ -18,9 +18,9 @@ use anyhow::{Context, Result};
 use gio::{ListStore, SimpleAction};
 use glib::{clone, Object};
 use gtk::{gio, glib, pango, Expression, PropertyExpression};
-use once_cell::sync::Lazy;
 use std::{cell::RefMut, thread};
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::mpsc;
+use tokio::time::{sleep, Duration};
 
 glib::wrapper! {
     pub struct Window(ObjectSubclass<imp::Window>)
@@ -30,7 +30,6 @@ glib::wrapper! {
 }
 
 const WINDOW_NAME: &str = "GT Overlay";
-static BROWSER: Lazy<Mutex<Option<BrowserHandle>>> = Lazy::new(|| Mutex::new(None));
 
 impl Window {
     pub fn new(app: &adw::Application) -> Self {
@@ -408,14 +407,17 @@ impl Window {
     }
 
     fn setup_client(&self) {
-        let rc = tokio::runtime::Runtime::new().unwrap();
-        rc.block_on(async {
-            let mut browser = BROWSER.lock().await;
-            if browser.is_none() {
-                let client = BrowserHandle::new();
-                *browser = Some(client);
-            }
-        });
+        // let rc = tokio::runtime::Runtime::new().unwrap();
+        // rc.block_on(async {
+        //     let mut browser = BROWSER.lock().await;
+        //     if browser.is_none() {
+        //         let client = fantoccini::ClientBuilder::native()
+        //             .connect("http://localhost:4444")
+        //             .await
+        //             .expect("Failed to connect to browser");
+        //         *browser = Some(client);
+        //     }
+        // });
     }
 
     fn restore_data(&self) -> Result<()> {
@@ -720,70 +722,84 @@ impl Window {
         let areas = self.translation_areas()?;
         let is_areas = !obj.chk_full_screen.is_active();
 
-        let (send, recv) = oneshot::channel();
+        let (tx, mut rx) = mpsc::channel(10);
         thread::spawn(move || {
             let rc = tokio::runtime::Runtime::new().unwrap();
             rc.block_on(async {
-                let areas = if is_areas {
-                    ocr.ocr_areas(&areas, &screen)
-                } else {
-                    ocr.ocr_screen(&screen)
+                let client = match translation::client().await {
+                    Ok(value) => value,
+                    Err(err) => {
+                        let _ = tx.send(Err(anyhow::anyhow!(err.to_string()))).await;
+                        return;
+                    }
                 };
 
-                if let Err(err) = areas {
-                    let _ = send.send(Err(anyhow::anyhow!(err.to_string())));
-                    return;
-                }
-                let mut areas = areas.unwrap();
+                while !tx.is_closed() {
+                    let areas = if is_areas {
+                        ocr.ocr_areas(&areas, &screen)
+                    } else {
+                        ocr.ocr_screen(&screen)
+                    };
 
-                let browser = BROWSER.lock().await;
-                let client = browser.as_ref().unwrap();
-                if translator != "nt" {
-                    for area in &mut areas {
-                        let result = match provider.as_str() {
-                            "google" => {
-                                client
-                                    .translate_from_google(
-                                        area.text.clone(),
-                                        ocr.to_translator().code,
-                                        translator.clone(),
-                                    )
-                                    .await
-                            }
-                            _ => {
-                                client
-                                    .translate_from_deepl(
-                                        area.text.clone(),
-                                        ocr.to_translator().code,
-                                        translator.clone(),
-                                    )
-                                    .await
-                            }
-                        };
-                        area.text = result;
+                    if let Err(err) = areas {
+                        let _ = tx.send(Err(anyhow::anyhow!(err.to_string()))).await;
+                        return;
                     }
+                    let mut areas = areas.unwrap();
+
+                    if translator != "nt" {
+                        for area in &mut areas {
+                            sleep(Duration::from_millis(5000)).await;
+                            let result = match provider.as_str() {
+                                "google" => {
+                                    translation::google(
+                                        &client,
+                                        &area.text,
+                                        &ocr.to_translator().code,
+                                        &translator,
+                                    )
+                                    .await
+                                }
+                                _ => {
+                                    translation::deepl(
+                                        &client,
+                                        &area.text.clone(),
+                                        &ocr.to_translator().code,
+                                        &translator.clone(),
+                                    )
+                                    .await
+                                }
+                            };
+                            if let Err(err) = result {
+                                let _ = tx.send(Err(anyhow::anyhow!(err.to_string()))).await;
+                                return;
+                            }
+                            area.text = result.unwrap();
+                        }
+                    }
+
+                    let _ = tx.send(Ok(areas)).await;
                 }
 
-                let _ = send.send(Ok(areas));
+                let _ = client.close().await;
             });
         });
 
         glib::spawn_future_local(clone!(@weak self as window => async move {
-            let message = recv.await;
+            while let Some(message) = rx.recv().await {
+                if *window.imp().state.borrow() == State::Stopped { break; };
+                let areas = match message {
+                    Ok(value) => { value },
+                    Err(err) => {
+                        window.error_dialog(&err.to_string());
+                        break;
+                    }
+                };
+                let _ = window.draw_text(areas, is_vertical);
+            }
+            rx.close();
             window.imp().running.replace(false);
             window.imp().status_label.set_text("Idle");
-            if message.is_err() {
-                window.error_dialog(&message.unwrap_err().to_string());
-                return;
-            }
-            let message = message.unwrap();
-            match message {
-                Ok(texts) => {
-                    let _ = window.draw_text(texts, is_vertical);
-                    if window.current_state() == State::Started { let _ = window.text_overlay(); }
-                },
-                Err(err) => window.error_dialog(&err.to_string()),
-            }
         }));
 
         Ok(())
