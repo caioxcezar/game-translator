@@ -66,8 +66,9 @@ impl Window {
                     window.dialog("Webdriver Installed", "Webdriver installed and program ready to be used");
                 }
             });
-            if let Err(err) = translation::run_webdriver(PORT) {
-                window.dialog("error running webdriver", &err.to_string());
+            match translation::run_webdriver(PORT) {
+                Ok(child) => { let _ = window.imp().webdriver.replace(Some(child)); }
+                Err(err) => { window.dialog("error running webdriver", &err.to_string()); }
             }
         }));
     }
@@ -833,7 +834,7 @@ impl Window {
     }
 
     fn draw_text(&self, areas: Vec<AreaData>, vertical: bool) -> Result<()> {
-        let regex = Regex::new(r"\n+").unwrap();
+        let regex = Regex::new(r"\n+")?;
 
         let obj = self.imp();
         obj.drawing_area.queue_draw();
@@ -844,13 +845,13 @@ impl Window {
                     gtk::cairo::FontSlant::Normal,
                     gtk::cairo::FontWeight::Normal,
                 );
-                cr.set_antialias(gtk::cairo::Antialias::Fast);
+                cr.set_antialias(gtk::cairo::Antialias::Good);
 
                 for area in areas.iter() {
-                    regex.replace_all(&area.text, "\n").into_owned();
                     if area.text.trim().is_empty() {
-                        continue;
+                        return;
                     }
+                    regex.replace_all(&area.text, "\n").into_owned();
                     if vertical {
                         draw_vertical_line(cr, area);
                     } else {

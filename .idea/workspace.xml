@@ -13,10 +13,7 @@
   <component name="ChangeListManager">
     <list default="true" id="15fc333c-1e33-4f26-b96a-fc3f60d2e3f5" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/translation.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/translation.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/utils.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/utils.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/window/imp.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/window/imp.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/window/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/window/mod.rs" afterDir="false" />
     </list>
@@ -48,7 +45,7 @@
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
     "RunOnceActivity.rust.reset.selective.auto.import": "true",
-    "git-widget-placeholder": "develop",
+    "git-widget-placeholder": "master",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
@@ -95,6 +92,7 @@
       <workItem from="1753569114159" duration="2369000" />
       <workItem from="1753572118612" duration="1166000" />
       <workItem from="1753577932897" duration="1791000" />
+      <workItem from="1753633837099" duration="1817000" />
     </task>
     <servers />
   </component>
@@ -111,5 +109,16 @@
         </entry>
       </map>
     </option>
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
+          <url>file://$PROJECT_DIR$/src/utils.rs</url>
+          <line>41</line>
+          <option name="timeStamp" value="9" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
 </project>

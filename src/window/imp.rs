@@ -10,12 +10,14 @@ use glib::subclass::InitializingObject;
 use gtk::{gio, glib, prelude::ListModelExtManual, CompositeTemplate};
 use once_cell::sync::OnceCell;
 use std::fs;
+use tokio::process::Child;
 // ANCHOR: struct
 // Object holding the state
 #[derive(CompositeTemplate, Default)]
 #[template(resource = "/org/caioxcezar/game_translator/window.ui")]
 pub struct Window {
     pub settings: RefCell<Settings>,
+    pub webdriver: RefCell<Option<Child>>,
     #[template_child]
     pub stack: TemplateChild<gtk::Stack>,
     #[template_child]
@@ -89,13 +91,18 @@ impl WidgetImpl for Window {}
 // Trait shared by all windows
 impl WindowImpl for Window {
     fn close_request(&self) -> glib::Propagation {
+        let obj = self.obj();
         if let Ok(path) = utils::temp_path() {
             fs::remove_dir_all(path).expect("Could not remove temp files");
         }
 
+        let webdriver = obj.imp().webdriver.take();
+        if let Some(mut webdriver) = webdriver {
+            let _ = webdriver.start_kill();
+        }
+
         if let Ok(path) = utils::data_path() {
-            let backup_data = self
-                .obj()
+            let backup_data = obj
                 .profiles()
                 .iter::<ProfileObject>()
                 .filter_map(Result::ok)

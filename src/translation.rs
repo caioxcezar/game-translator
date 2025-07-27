@@ -12,11 +12,28 @@ use fantoccini::key::Key;
 use fantoccini::{Client, Locator};
 
 use crate::utils;
-
+// --disable-gcm --disable-sync --disable-cloud-import
 pub async fn client() -> Result<Client, NewSessionError> {
     let mut caps = serde_json::map::Map::new();
     let opts = serde_json::json!({
-        "args": ["--headless=new", "--disable-gpu"],
+        "args": [
+            "--headless=new",
+            "--disable-software-rasterizer",
+            "--disable-gpu",
+            "--no-sandbox",
+            "--disable-extensions",
+            "--disable-default-apps",
+            "--disable-background-timer-throttling",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-breakpad",
+            "--no-first-run",
+            "--no-zygote",
+            "--disable-renderer-backgrounding",
+            "--disable-notifications",
+            "--disable-background-networking",
+            "--disable-component-update",
+            "--log-level=3"
+        ],
     });
     caps.insert("goog:chromeOptions".to_string(), opts);
 
@@ -27,6 +44,10 @@ pub async fn client() -> Result<Client, NewSessionError> {
 }
 
 pub async fn google(client: &Client, text: &str, source: &str, target: &str) -> Result<String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Ok(text.to_string());
+    }
     let url = client.current_url().await?;
 
     let mut pairs = url.query_pairs();
@@ -52,6 +73,10 @@ pub async fn google(client: &Client, text: &str, source: &str, target: &str) -> 
 }
 
 pub async fn deepl(client: &Client, text: &str, source: &str, target: &str) -> Result<String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Ok(text.to_string());
+    }
     let url = client.current_url().await?;
 
     if url.domain() != Some("deepl.com") {
@@ -212,18 +237,18 @@ pub fn webdriver_path() -> Result<PathBuf> {
     Ok(temp_dir.join(bin_name))
 }
 
-pub fn run_webdriver(port: u32) -> Result<PathBuf> {
+pub fn run_webdriver(port: u32) -> Result<tokio::process::Child> {
     let (_, bin_name) = version_url_and_name()?;
     let system_path = utils::system_path()?.join("chromedriver");
     let bin_path = system_path.join(bin_name);
 
-    Command::new(&bin_path)
+    let child = Command::new(&bin_path)
         .arg(format!("--port={port}"))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()?;
 
-    Ok(bin_path)
+    Ok(child)
 }
 
 pub async fn download_webdriver() -> Result<PathBuf> {
