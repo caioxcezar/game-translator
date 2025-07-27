@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 mod area_object;
 mod ocr_object;
 mod profile_object;
