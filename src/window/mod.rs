@@ -30,11 +30,45 @@ glib::wrapper! {
 }
 
 const WINDOW_NAME: &str = "GT Overlay";
+const PORT: u32 = 50682;
+const TRANSLATION_DELAY: u64 = 3000;
 
 impl Window {
     pub fn new(app: &adw::Application) -> Self {
         // Create new window
         Object::builder().property("application", app).build()
+    }
+
+    fn setup_webdriver(&self) {
+        glib::spawn_future_local(clone!(@weak self as window => async move {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                if !translation::webdriver_path().unwrap().exists() {
+                    let dialog = gtk::Window::builder()
+                        .title("Installing webdriver...")
+                        .modal(true)
+                        .resizable(false)
+                        .decorated(true)
+                        .default_width(300)
+                        .default_height(150)
+                        .build();
+
+                    let label = gtk::Label::new(Some("This message will close altomatic when finished"));
+                    dialog.set_child(Some(&label));
+                    dialog.present();
+
+                    if let Err(err) = translation::download_webdriver().await {
+                        window.dialog("Error downloading webdriver", &err.to_string());
+                        return;
+                    }
+                    dialog.close();
+                    window.dialog("Webdriver Installed", "Webdriver installed and program ready to be used");
+                }
+            });
+            if let Err(err) = translation::run_webdriver(PORT) {
+                window.dialog("error running webdriver", &err.to_string());
+            }
+        }));
     }
 
     fn setup_settings(&self) {
@@ -406,20 +440,6 @@ impl Window {
         );
     }
 
-    fn setup_client(&self) {
-        // let rc = tokio::runtime::Runtime::new().unwrap();
-        // rc.block_on(async {
-        //     let mut browser = BROWSER.lock().await;
-        //     if browser.is_none() {
-        //         let client = fantoccini::ClientBuilder::native()
-        //             .connect("http://localhost:4444")
-        //             .await
-        //             .expect("Failed to connect to browser");
-        //         *browser = Some(client);
-        //     }
-        // });
-    }
-
     fn restore_data(&self) -> Result<()> {
         let profiles = match utils::open_file(utils::data_path()?) {
             Ok(file) => {
@@ -722,7 +742,7 @@ impl Window {
         let areas = self.translation_areas()?;
         let is_areas = !obj.chk_full_screen.is_active();
 
-        let (tx, mut rx) = mpsc::channel(10);
+        let (tx, mut rx) = mpsc::channel(1);
         thread::spawn(move || {
             let rc = tokio::runtime::Runtime::new().unwrap();
             rc.block_on(async {
@@ -749,7 +769,7 @@ impl Window {
 
                     if translator != "nt" {
                         for area in &mut areas {
-                            sleep(Duration::from_millis(5000)).await;
+                            sleep(Duration::from_millis(200)).await;
                             let result = match provider.as_str() {
                                 "google" => {
                                     translation::google(
@@ -779,6 +799,7 @@ impl Window {
                     }
 
                     let _ = tx.send(Ok(areas)).await;
+                    sleep(Duration::from_millis(TRANSLATION_DELAY)).await;
                 }
 
                 let _ = client.close().await;

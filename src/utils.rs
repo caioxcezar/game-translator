@@ -1,4 +1,4 @@
-use anyhow::Context;
+use anyhow::{Context, Result};
 use gtk::glib;
 use std::{env, fs, path::PathBuf, str::Lines};
 
@@ -17,7 +17,7 @@ pub fn split_utf8(text: &str, start: usize, end: usize) -> String {
         .to_owned()
 }
 
-pub fn temp_path() -> Result<String, anyhow::Error> {
+pub fn temp_path() -> Result<String> {
     let mut temp = env::temp_dir();
     temp.push(APP_ID);
     std::fs::create_dir_all(&temp)?;
@@ -27,12 +27,12 @@ pub fn temp_path() -> Result<String, anyhow::Error> {
     Err(anyhow::anyhow!("Failed to get temp path"))
 }
 
-pub fn remove_file(path: &str) -> Result<(), anyhow::Error> {
+pub fn remove_file(path: &str) -> Result<()> {
     fs::remove_file(path)?;
     Ok(())
 }
 
-pub fn open_file(path: PathBuf) -> Result<fs::File, anyhow::Error> {
+pub fn open_file(path: PathBuf) -> Result<fs::File> {
     fs::File::open(path).ok().context("Failed to open file.")
 }
 
@@ -46,18 +46,21 @@ pub fn calc_font_size(lines: &Lines, width: i32, height: i32) -> f64 {
     area.sqrt()
 }
 
-pub fn data_path() -> Result<PathBuf, anyhow::Error> {
+pub fn system_path() -> Result<PathBuf> {
     let mut path = glib::user_data_dir();
     path.push(APP_ID);
     std::fs::create_dir_all(&path)?;
+    Ok(path)
+}
+
+pub fn data_path() -> Result<PathBuf> {
+    let mut path = system_path()?;
     path.push("data.json");
     Ok(path)
 }
 
-pub fn settings_path() -> Result<PathBuf, anyhow::Error> {
-    let mut path = glib::user_data_dir();
-    path.push(APP_ID);
-    std::fs::create_dir_all(&path)?;
+pub fn settings_path() -> Result<PathBuf> {
+    let mut path = system_path()?;
     path.push("settings.json");
     Ok(path)
 }

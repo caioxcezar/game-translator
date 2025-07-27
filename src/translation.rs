@@ -1,6 +1,9 @@
 use fantoccini::elements::Element;
 use fantoccini::error::NewSessionError;
 use std::borrow::Cow;
+use std::path::PathBuf;
+use std::process::Stdio;
+use tokio::process::Command;
 use tokio::time::{sleep, Duration, Instant};
 
 use anyhow::{Context, Result};
@@ -8,8 +11,17 @@ use fantoccini::actions::{InputSource, KeyAction, KeyActions};
 use fantoccini::key::Key;
 use fantoccini::{Client, Locator};
 
+use crate::utils;
+
 pub async fn client() -> Result<Client, NewSessionError> {
+    let mut caps = serde_json::map::Map::new();
+    let opts = serde_json::json!({
+        "args": ["--headless=new", "--disable-gpu"],
+    });
+    caps.insert("goog:chromeOptions".to_string(), opts);
+
     fantoccini::ClientBuilder::native()
+        .capabilities(caps)
         .connect("http://localhost:50682")
         .await
 }
@@ -174,4 +186,80 @@ async fn wait_for_network_idle(
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     Ok(())
+}
+
+fn version_url_and_name() -> Result<(String, String)> {
+    let result = match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("windows", "x86") => ("win32".to_string(), "chromedriver.exe".to_string()),
+        ("windows", "x86_64") => ("win64".to_string(), "chromedriver.exe".to_string()),
+        ("linux", "x86_64") => ("linux64".to_string(), "chromedriver".to_string()),
+        ("macos", "x86_64") => ("mac-x64".to_string(), "chromedriver".to_string()),
+        ("macos", "aarch64") => ("mac-arm64".to_string(), "chromedriver".to_string()),
+        _ => {
+            return Err(anyhow::Error::msg(format!(
+                "Unsupported OS: {}. with the arch: {}",
+                std::env::consts::OS,
+                std::env::consts::ARCH
+            )))
+        }
+    };
+    Ok(result)
+}
+
+pub fn webdriver_path() -> Result<PathBuf> {
+    let (_, bin_name) = version_url_and_name()?;
+    let temp_dir = utils::system_path()?.join("chromedriver");
+    Ok(temp_dir.join(bin_name))
+}
+
+pub fn run_webdriver(port: u32) -> Result<PathBuf> {
+    let (_, bin_name) = version_url_and_name()?;
+    let system_path = utils::system_path()?.join("chromedriver");
+    let bin_path = system_path.join(bin_name);
+
+    Command::new(&bin_path)
+        .arg(format!("--port={port}"))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+
+    Ok(bin_path)
+}
+
+pub async fn download_webdriver() -> Result<PathBuf> {
+    let (arch, bin_name) = version_url_and_name()?;
+    let system_dir = utils::system_path()?.join("chromedriver");
+    std::fs::create_dir_all(&system_dir)?;
+    let bin_path = system_dir.join(&bin_name);
+    let version_name = format!("chromedriver-{arch}");
+
+    let latest_version =
+        reqwest::get("https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_STABLE")
+            .await?
+            .text()
+            .await?;
+    let download_url = format!(
+        "https://storage.googleapis.com/chrome-for-testing-public/{latest_version}/{arch}/{version_name}.zip"
+    );
+
+    let bytes = reqwest::get(&download_url).await?.bytes().await?;
+
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
+
+    for i in 0..zip.len() {
+        let mut file = zip.by_index(i)?;
+        let name = file.name();
+
+        if name == format!("{version_name}/{bin_name}") {
+            let mut out_file = std::fs::File::create(&bin_path)?;
+            std::io::copy(&mut file, &mut out_file)?;
+            break;
+        }
+    }
+    #[cfg(unix)]
+    {
+        fs::set_permissions(&bin_path, fs::Permissions::from_mode(0o755)).await?;
+    }
+
+    Ok(bin_path)
 }

@@ -71,12 +71,12 @@ impl ObjectImpl for Window {
         self.parent_constructed();
         // Setup
         let obj = self.obj();
+        obj.setup_webdriver();
         obj.setup_settings();
         obj.setup_data();
         obj.setup_actions();
         obj.setup_drag_action();
         obj.setup_profiles();
-        obj.setup_client();
         let _ = obj.restore_data();
     }
 }

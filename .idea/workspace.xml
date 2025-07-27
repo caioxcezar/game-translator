@@ -12,11 +12,12 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="15fc333c-1e33-4f26-b96a-fc3f60d2e3f5" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/src/browser/browser_actor.rs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/browser/browser_handle.rs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/browser/browser_message.rs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/browser/mod.rs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/translation.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/translation.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/utils.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/utils.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/window/imp.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/window/imp.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/window/mod.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/window/mod.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -31,10 +32,10 @@
   <component name="MacroExpansionManager">
     <option name="directoryName" value="x4bVMIgw" />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "customColor": "",
-  "associatedIndex": 1
-}]]></component>
+  <component name="ProjectColorInfo">{
+  &quot;customColor&quot;: &quot;&quot;,
+  &quot;associatedIndex&quot;: 1
+}</component>
   <component name="ProjectId" id="30QOjDBzG1p36Hn9S5mJOFZNR1r" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
@@ -55,6 +56,7 @@
     "nodejs_package_manager_path": "npm",
     "org.rust.cargo.project.model.PROJECT_DISCOVERY": "true",
     "org.rust.cargo.project.model.impl.CargoExternalSystemProjectAware.subscribe.first.balloon": "",
+    "settings.editor.selected.configurable": "language.rust.rustfmt",
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
@@ -89,6 +91,10 @@
       <option name="presentableId" value="Default" />
       <updated>1753556463413</updated>
       <workItem from="1753556465174" duration="721000" />
+      <workItem from="1753559627954" duration="1075000" />
+      <workItem from="1753569114159" duration="2369000" />
+      <workItem from="1753572118612" duration="1166000" />
+      <workItem from="1753577932897" duration="1791000" />
     </task>
     <servers />
   </component>
