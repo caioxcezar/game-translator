@@ -18,6 +18,7 @@ use anyhow::{Context, Result};
 use gio::{ListStore, SimpleAction};
 use glib::{clone, Object};
 use gtk::{gio, glib, pango, Expression, PropertyExpression};
+use regex::Regex;
 use std::{cell::RefMut, thread};
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
@@ -31,7 +32,7 @@ glib::wrapper! {
 
 const WINDOW_NAME: &str = "GT Overlay";
 const PORT: u32 = 50682;
-const TRANSLATION_DELAY: u64 = 3000;
+const TRANSLATION_DELAY: u64 = 10000;
 
 impl Window {
     pub fn new(app: &adw::Application) -> Self {
@@ -831,7 +832,9 @@ impl Window {
         self.dialog("Text Overlay Error", message);
     }
 
-    fn draw_text(&self, texts: Vec<AreaData>, vertical: bool) -> Result<()> {
+    fn draw_text(&self, areas: Vec<AreaData>, vertical: bool) -> Result<()> {
+        let regex = Regex::new(r"\n+").unwrap();
+
         let obj = self.imp();
         obj.drawing_area.queue_draw();
         obj.drawing_area
@@ -843,14 +846,15 @@ impl Window {
                 );
                 cr.set_antialias(gtk::cairo::Antialias::Fast);
 
-                for text in texts.iter() {
-                    if text.text.trim().is_empty() {
+                for area in areas.iter() {
+                    regex.replace_all(&area.text, "\n").into_owned();
+                    if area.text.trim().is_empty() {
                         continue;
                     }
                     if vertical {
-                        draw_vertical_line(cr, text);
+                        draw_vertical_line(cr, area);
                     } else {
-                        draw_line(cr, text);
+                        draw_line(cr, area);
                     }
                 }
                 cr.stroke().expect("Invalid cairo surface state");
