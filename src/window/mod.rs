@@ -955,14 +955,7 @@ impl Window {
         obj.drawing_area
             .set_draw_func(move |_, cr, _width, _height| {
                 for area in areas.iter() {
-                    let rect = gtk::gdk::Rectangle::new(area.x, area.y, area.width, area.height);
-                    let font_family = "Sans";
-                    let _ = paint::draw_fitted_text_with_background(
-                        cr,
-                        &area.text,
-                        &rect,
-                        Some(font_family),
-                    );
+                    let _ = paint::draw_fitted_text_with_background(cr, area);
                 }
             });
     }
