@@ -1,7 +1,8 @@
-#![windows_subsystem = "windows"]
+// #![windows_subsystem = "windows"]
 
 mod area_object;
 mod ocr_object;
+mod paint;
 mod profile_object;
 mod screen_object;
 mod settings;

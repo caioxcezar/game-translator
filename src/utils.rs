@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use gtk::glib;
-use std::{env, fs, path::PathBuf, str::Lines};
+use std::{env, fs, path::PathBuf};
 
 use crate::APP_ID;
 
@@ -34,16 +34,6 @@ pub fn remove_file(path: &str) -> Result<()> {
 
 pub fn open_file(path: PathBuf) -> Result<fs::File> {
     fs::File::open(path).ok().context("Failed to open file.")
-}
-
-pub fn calc_font_size(lines: &Lines, width: i32, height: i32) -> f64 {
-    let (width, height) = (width as f64, height as f64);
-    let line_count = lines.clone().count() as f64;
-    let char_count = lines.clone().max().unwrap().split("").count() as f64;
-    let height = height / line_count;
-    let width = width / char_count;
-    let area = width * height;
-    area.sqrt()
 }
 
 pub fn system_path() -> Result<PathBuf> {

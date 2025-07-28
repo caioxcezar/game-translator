@@ -3,6 +3,7 @@ mod imp;
 use crate::{
     area_object::{AreaData, AreaObject},
     ocr_object::{OcrData, OcrObject},
+    paint,
     profile_object::{ProfileData, ProfileObject},
     screen_object::{ScreenData, ScreenObject},
     settings::Settings,
@@ -18,7 +19,6 @@ use anyhow::{Context, Result};
 use gio::{ListStore, SimpleAction};
 use glib::{clone, Object};
 use gtk::{gio, glib, pango, Expression, PropertyExpression};
-use regex::Regex;
 use std::{cell::RefMut, thread};
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
@@ -32,7 +32,7 @@ glib::wrapper! {
 
 const WINDOW_NAME: &str = "GT Overlay";
 const PORT: u32 = 50682;
-const TRANSLATION_DELAY: u64 = 10000;
+const TRANSLATION_DELAY: u64 = 3000;
 
 impl Window {
     pub fn new(app: &adw::Application) -> Self {
@@ -41,36 +41,49 @@ impl Window {
     }
 
     fn setup_webdriver(&self) {
-        glib::spawn_future_local(clone!(@weak self as window => async move {
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async {
-                if !translation::webdriver_path().unwrap().exists() {
-                    let dialog = gtk::Window::builder()
-                        .title("Installing webdriver...")
-                        .modal(true)
-                        .resizable(false)
-                        .decorated(true)
-                        .default_width(300)
-                        .default_height(150)
-                        .build();
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = window)]
+            self,
+            async move {
+                let rt = tokio::runtime::Runtime::new().unwrap();
+                rt.block_on(async {
+                    if !translation::webdriver_path().unwrap().exists() {
+                        let dialog = gtk::Window::builder()
+                            .title("Installing webdriver...")
+                            .modal(true)
+                            .resizable(false)
+                            .decorated(true)
+                            .default_width(300)
+                            .default_height(150)
+                            .build();
 
-                    let label = gtk::Label::new(Some("This message will close altomatic when finished"));
-                    dialog.set_child(Some(&label));
-                    dialog.present();
+                        let label = gtk::Label::new(Some(
+                            "This message will close altomatic when finished",
+                        ));
+                        dialog.set_child(Some(&label));
+                        dialog.present();
 
-                    if let Err(err) = translation::download_webdriver().await {
-                        window.dialog("Error downloading webdriver", &err.to_string());
-                        return;
+                        if let Err(err) = translation::download_webdriver().await {
+                            window.dialog("Error downloading webdriver", &err.to_string());
+                            return;
+                        }
+                        dialog.close();
+                        window.dialog(
+                            "Webdriver Installed",
+                            "Webdriver installed and program ready to be used",
+                        );
                     }
-                    dialog.close();
-                    window.dialog("Webdriver Installed", "Webdriver installed and program ready to be used");
+                });
+                match translation::run_webdriver(PORT) {
+                    Ok(child) => {
+                        let _ = window.imp().webdriver.replace(Some(child));
+                    }
+                    Err(err) => {
+                        window.dialog("error running webdriver", &err.to_string());
+                    }
                 }
-            });
-            match translation::run_webdriver(PORT) {
-                Ok(child) => { let _ = window.imp().webdriver.replace(Some(child)); }
-                Err(err) => { window.dialog("error running webdriver", &err.to_string()); }
             }
-        }));
+        ));
     }
 
     fn setup_settings(&self) {
@@ -151,24 +164,35 @@ impl Window {
     fn setup_actions(&self) {
         let obj = self.imp();
 
-        obj.title
-            .connect_changed(clone!(@weak self as window => move |entry| {
+        obj.title.connect_changed(clone!(
+            #[weak(rename_to = window)]
+            self,
+            move |entry| {
                 if let Ok(profile) = window.selected_profile() {
                     profile.set_title(entry.text().to_string());
                 }
-            }));
+            }
+        ));
 
-        obj.chk_full_screen
-            .connect_toggled(clone!(@weak self as window => move |button| {
-                window.imp().config_button.set_sensitive(!button.is_active());
+        obj.chk_full_screen.connect_toggled(clone!(
+            #[weak(rename_to = window)]
+            self,
+            move |button| {
+                window
+                    .imp()
+                    .config_button
+                    .set_sensitive(!button.is_active());
 
                 if let Ok(profile) = window.selected_profile() {
                     profile.set_use_areas(button.is_active());
                 }
-            }));
+            }
+        ));
 
-        obj.dd_translation.connect_selected_item_notify(
-            clone!(@weak self as window => move |drop_down| {
+        obj.dd_translation.connect_selected_item_notify(clone!(
+            #[weak(rename_to = window)]
+            self,
+            move |drop_down| {
                 let tra_obj = drop_down.selected_item().and_downcast::<TranslatorObject>();
                 if let Some(tra_obj) = tra_obj {
                     let _ = window.settings().set("tra-lang", tra_obj.code());
@@ -177,11 +201,13 @@ impl Window {
                         profile.set_translation(tra_obj.code());
                     }
                 };
-            }),
-        );
+            }
+        ));
 
-        obj.dd_ocr
-            .connect_selected_item_notify(clone!(@weak self as window => move |drop_down| {
+        obj.dd_ocr.connect_selected_item_notify(clone!(
+            #[weak(rename_to = window)]
+            self,
+            move |drop_down| {
                 let ocr_obj = drop_down.selected_item().and_downcast::<OcrObject>();
                 if let Some(ocr_obj) = ocr_obj {
                     let _ = window.settings().set("ocr-lang", ocr_obj.code());
@@ -190,57 +216,84 @@ impl Window {
                         profile.set_language(ocr_obj.code());
                     }
                 };
-            }));
+            }
+        ));
 
-        obj.dd_screen.connect_selected_item_notify(
-            clone!(@weak self as window => move |drop_down| {
-                    if let Some(app) = drop_down.selected_item().and_downcast::<ScreenObject>() {
-                        if let Ok(profile) = window.selected_profile() {
-                            profile.set_app_name(app.app_name());
-                            profile.set_app_title(app.title());
-                        }
+        obj.dd_screen.connect_selected_item_notify(clone!(
+            #[weak(rename_to = window)]
+            self,
+            move |drop_down| {
+                if let Some(app) = drop_down.selected_item().and_downcast::<ScreenObject>() {
+                    if let Ok(profile) = window.selected_profile() {
+                        profile.set_app_name(app.app_name());
+                        profile.set_app_title(app.title());
                     }
-            }),
-        );
+                }
+            }
+        ));
 
         self.add_simple_action(
             "new-profile",
-            clone!(@weak self as window => move |_, _| {
-                if let Err(err) = window.new_profile() {
-                    window.error_dialog(&err.to_string());
+            clone!(
+                #[weak(rename_to = window)]
+                self,
+                move |_, _| {
+                    if let Err(err) = window.new_profile() {
+                        window.error_dialog(&err.to_string());
+                    }
                 }
-            }),
+            ),
         );
 
         self.add_simple_action(
             "translate-image",
-            clone!(@weak self as window => move |_, _| window.navigate("image")),
+            clone!(
+                #[weak(rename_to = window)]
+                self,
+                move |_, _| window.navigate("image")
+            ),
         );
 
         self.set_language_action();
 
         self.add_simple_action(
             "on-action",
-            clone!(@weak self as window => move |_, _| window.on_action()),
+            clone!(
+                #[weak(rename_to = window)]
+                self,
+                move |_, _| window.on_action()
+            ),
         );
 
         self.add_simple_action(
             "configure-page",
-            clone!(@weak self as window => move |_, _| window.configure_page()),
+            clone!(
+                #[weak(rename_to = window)]
+                self,
+                move |_, _| window.configure_page()
+            ),
         );
 
         self.add_simple_action(
             "remove-profile",
-            clone!(@weak self as window => move |_, _| window.remove_current_profile()),
+            clone!(
+                #[weak(rename_to = window)]
+                self,
+                move |_, _| window.remove_current_profile()
+            ),
         );
 
         self.add_simple_action(
             "refresh-windows",
-            clone!(@weak self as window => move |_, _| {
-                if let Err(err) = window.setup_dd_screen() {
-                    window.dialog("Failed to load applications", &err.to_string());
+            clone!(
+                #[weak(rename_to = window)]
+                self,
+                move |_, _| {
+                    if let Err(err) = window.setup_dd_screen() {
+                        window.dialog("Failed to load applications", &err.to_string());
+                    }
                 }
-            }),
+            ),
         );
     }
 
@@ -275,12 +328,16 @@ impl Window {
         self.add_toggle_action(
             "toggle-language",
             provider,
-            clone!(@weak self as window => move |action, value| {
-                let new_value = value.unwrap().to_owned();
-                let str_value = new_value.str().unwrap();
-                let _ = window.settings().set("tra-provider", str_value.to_string());
-                action.set_state(&new_value);
-            }),
+            clone!(
+                #[weak(rename_to = window)]
+                self,
+                move |action, value| {
+                    let new_value = value.unwrap().to_owned();
+                    let str_value = new_value.str().unwrap();
+                    let _ = window.settings().set("tra-provider", str_value.to_string());
+                    action.set_state(&new_value);
+                }
+            ),
         )
     }
 
@@ -375,18 +432,27 @@ impl Window {
 
         self.imp().profiles_list.bind_model(
             self.imp().profiles.get(),
-            clone!(@weak self as window => @default-panic, move |obj| {
-                let collection_object = obj
-                    .downcast_ref::<ProfileObject>()
-                    .expect("The object should be of type `ProfileObject`.");
-                let row = window.create_collection_row(collection_object);
-                row.upcast()
-            }),
+            clone!(
+                #[weak(rename_to = window)]
+                self,
+                #[upgrade_or_panic]
+                move |obj| {
+                    let collection_object = obj
+                        .downcast_ref::<ProfileObject>()
+                        .expect("The object should be of type `ProfileObject`.");
+                    let row = window.create_collection_row(collection_object);
+                    row.upcast()
+                }
+            ),
         );
 
-        self.imp().profiles_list.connect_row_selected(
-            clone!(@weak self as window => move |_, row| {
-                if row.is_none() { return; }
+        self.imp().profiles_list.connect_row_selected(clone!(
+            #[weak(rename_to = window)]
+            self,
+            move |_, row| {
+                if row.is_none() {
+                    return;
+                }
                 let _ = (|| -> Result<()> {
                     let index = row.context("Failed to get selected row")?.index();
                     let profile = window.profile(index as u32)?.to_profile_data();
@@ -397,14 +463,14 @@ impl Window {
                     let list = TranslatorData::all_languages();
                     let id = list
                         .iter()
-                        .position(|value| { value.code.eq(&profile.translation) })
+                        .position(|value| value.code.eq(&profile.translation))
                         .unwrap_or(0);
                     obj.dd_translation.set_selected(id as u32);
 
                     let list = rusty_tesseract::get_tesseract_langs()?;
                     let id = list
                         .iter()
-                        .position(|value| { value.eq(&profile.language) })
+                        .position(|value| value.eq(&profile.language))
                         .unwrap_or(0);
                     obj.dd_ocr.set_selected(id as u32);
 
@@ -429,17 +495,25 @@ impl Window {
 
                     if not_found {
                         if let Some(model) = obj.dd_screen.model() {
-                            let liststore = model.downcast_ref::<ListStore>().expect("Não é possível obter a lista de aplicativos");
-                            let title = format!("{} (Closed)", utils::truncate_string(&profile.app_title, 61));
-                            liststore.insert(0, &ScreenObject::new(u32::MAX, profile.app_name.to_string(), title));
+                            let liststore = model
+                                .downcast_ref::<ListStore>()
+                                .expect("Não é possível obter a lista de aplicativos");
+                            let title = format!(
+                                "{} (Closed)",
+                                utils::truncate_string(&profile.app_title, 61)
+                            );
+                            liststore.insert(
+                                0,
+                                &ScreenObject::new(u32::MAX, profile.app_name.to_string(), title),
+                            );
                             obj.dd_screen.set_selected(0);
                         }
                     }
 
                     Ok(())
                 })();
-        })
-        );
+            }
+        ));
     }
 
     fn restore_data(&self) -> Result<()> {
@@ -543,26 +617,39 @@ impl Window {
 
     fn setup_drag_action(&self) {
         let controller = gtk::GestureDrag::new();
-        controller.connect_drag_end(
-            clone!(@weak self as window => move |gesture, width, height| {
+        controller.connect_drag_end(clone!(
+            #[weak(rename_to = window)]
+            self,
+            move |gesture, width, height| {
                 let (x, y) = gesture.start_point().unwrap();
                 let mut x = x as i32;
                 let mut y = y as i32;
                 let mut height = height as i32;
                 let mut width = width as i32;
                 let areas = window.translation_areas();
-                if areas.is_err() { return; }
+                if areas.is_err() {
+                    return;
+                }
                 let mut areas = areas.unwrap();
                 let mut can_add = true;
 
                 if width == 0 && height == 0 {
                     can_add = false;
-                    areas.retain_mut(|area| x < area.x || x > area.x + area.width || y < area.y || y > area.y + area.height);
+                    areas.retain_mut(|area| {
+                        x < area.x
+                            || x > area.x + area.width
+                            || y < area.y
+                            || y > area.y + area.height
+                    });
                 } else if width == 0 || height == 0 {
                     can_add = false;
                 } else {
                     areas.iter_mut().for_each(|area| {
-                        if x < area.x || x > area.x + area.width || y < area.y || y > area.y + area.height {
+                        if x < area.x
+                            || x > area.x + area.width
+                            || y < area.y
+                            || y > area.y + area.height
+                        {
                             return;
                         }
                         area.x += width;
@@ -579,15 +666,36 @@ impl Window {
                     width = -width;
                     x -= width;
                 }
-                let new_rect = AreaData { height, width, x, y, ..Default::default() };
+                let new_rect = AreaData {
+                    height,
+                    width,
+                    x,
+                    y,
+                    ..Default::default()
+                };
 
-                can_add = can_add && !areas.iter().any(|rect| {
-                    let x_overlap = utils::value_in_range(new_rect.x, rect.x, rect.x + rect.width) || utils::value_in_range(rect.x, new_rect.x, new_rect.x + new_rect.width);
-                    let y_overlap = utils::value_in_range(new_rect.y, rect.y, rect.y + rect.height) || utils::value_in_range(rect.y, new_rect.y, new_rect.y + new_rect.height);
-                    x_overlap && y_overlap
-                });
+                can_add = can_add
+                    && !areas.iter().any(|rect| {
+                        let x_overlap =
+                            utils::value_in_range(new_rect.x, rect.x, rect.x + rect.width)
+                                || utils::value_in_range(
+                                    rect.x,
+                                    new_rect.x,
+                                    new_rect.x + new_rect.width,
+                                );
+                        let y_overlap =
+                            utils::value_in_range(new_rect.y, rect.y, rect.y + rect.height)
+                                || utils::value_in_range(
+                                    rect.y,
+                                    new_rect.y,
+                                    new_rect.y + new_rect.height,
+                                );
+                        x_overlap && y_overlap
+                    });
 
-                if can_add { areas.push(new_rect); }
+                if can_add {
+                    areas.push(new_rect);
+                }
 
                 let rectagles = areas.clone();
                 window.draw_rectagles(rectagles);
@@ -595,11 +703,13 @@ impl Window {
                 if let Ok(profile) = window.selected_profile() {
                     profile.areas().remove_all();
                     for area in &areas {
-                        profile.areas().append(&AreaObject::from_area_data(area.clone()));
+                        profile
+                            .areas()
+                            .append(&AreaObject::from_area_data(area.clone()));
                     }
                 }
-            })
-        );
+            }
+        ));
         self.imp().drawing_area.add_controller(controller);
     }
 
@@ -626,7 +736,7 @@ impl Window {
             .css_classes(["overlay"].to_vec())
             .build();
         page.set_visible(true);
-        WindowManager::set_window_translucent(WINDOW_NAME, intangible);
+        let _ = WindowManager::set_window_translucent(WINDOW_NAME, intangible);
     }
 
     fn on_action(&self) {
@@ -683,13 +793,13 @@ impl Window {
     }
 
     fn stop(&self) -> State {
-        WindowManager::close_window(WINDOW_NAME);
+        let _ = WindowManager::close_window(WINDOW_NAME);
         State::Stopped
     }
 
     fn configure_page(&self) {
         if self.current_state() == State::Paused {
-            WindowManager::close_window(WINDOW_NAME);
+            let _ = WindowManager::close_window(WINDOW_NAME);
             self.change_state(State::Stopped);
         } else {
             self.open_overlay_page(false);
@@ -808,22 +918,28 @@ impl Window {
             });
         });
 
-        glib::spawn_future_local(clone!(@weak self as window => async move {
-            while let Some(message) = rx.recv().await {
-                if *window.imp().state.borrow() == State::Stopped { break; };
-                let areas = match message {
-                    Ok(value) => { value },
-                    Err(err) => {
-                        window.error_dialog(&err.to_string());
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = window)]
+            self,
+            async move {
+                while let Some(message) = rx.recv().await {
+                    if *window.imp().state.borrow() == State::Stopped {
                         break;
-                    }
-                };
-                let _ = window.draw_text(areas, is_vertical);
+                    };
+                    let areas = match message {
+                        Ok(value) => value,
+                        Err(err) => {
+                            window.error_dialog(&err.to_string());
+                            break;
+                        }
+                    };
+                    window.draw_text(areas, is_vertical);
+                }
+                rx.close();
+                window.imp().running.replace(false);
+                window.imp().status_label.set_text("Idle");
             }
-            rx.close();
-            window.imp().running.replace(false);
-            window.imp().status_label.set_text("Idle");
-        }));
+        ));
 
         Ok(())
     }
@@ -833,77 +949,23 @@ impl Window {
         self.dialog("Text Overlay Error", message);
     }
 
-    fn draw_text(&self, areas: Vec<AreaData>, vertical: bool) -> Result<()> {
-        let regex = Regex::new(r"\n+")?;
-
+    fn draw_text(&self, areas: Vec<AreaData>, vertical: bool) {
         let obj = self.imp();
         obj.drawing_area.queue_draw();
         obj.drawing_area
             .set_draw_func(move |_, cr, _width, _height| {
-                cr.select_font_face(
-                    "Sarasa Gothic J",
-                    gtk::cairo::FontSlant::Normal,
-                    gtk::cairo::FontWeight::Normal,
-                );
-                cr.set_antialias(gtk::cairo::Antialias::Good);
-
                 for area in areas.iter() {
-                    if area.text.trim().is_empty() {
-                        return;
-                    }
-                    regex.replace_all(&area.text, "\n").into_owned();
-                    if vertical {
-                        draw_vertical_line(cr, area);
-                    } else {
-                        draw_line(cr, area);
-                    }
+                    let rect = gtk::gdk::Rectangle::new(area.x, area.y, area.width, area.height);
+                    let font_family = "Sans";
+                    let _ = paint::draw_fitted_text_with_background(
+                        cr,
+                        &area.text,
+                        &rect,
+                        Some(font_family),
+                    );
                 }
-                cr.stroke().expect("Invalid cairo surface state");
             });
-        Ok(())
     }
-}
-
-fn draw_vertical_line(cr: &gtk::cairo::Context, rect: &AreaData) {
-    let mut x = rect.x as f64;
-    let y = rect.y as f64;
-    let lines = rect.text.lines();
-    let font_size = utils::calc_font_size(&lines, rect.height, rect.width);
-
-    cr.set_font_size(font_size);
-    for line in lines {
-        let mut _y = y;
-        for c in line.split("") {
-            draw_text_with_outline(cr, x, _y, c);
-            _y += font_size;
-        }
-        x += font_size;
-    }
-}
-
-fn draw_line(cr: &gtk::cairo::Context, rect: &AreaData) {
-    let x = rect.x as f64;
-    let mut y = rect.y as f64;
-    let lines = rect.text.lines();
-    let font_size = utils::calc_font_size(&lines, rect.width, rect.height);
-    cr.set_font_size(font_size);
-    for line in lines {
-        y += font_size;
-        draw_text_with_outline(cr, x, y, line);
-    }
-}
-
-fn draw_text_with_outline(cr: &gtk::cairo::Context, x: f64, y: f64, text: &str) {
-    cr.set_source_rgba(0.0, 0.0, 0.0, 1.0);
-    for _x in [x - 1.5, x + 1.5] {
-        for _y in [y - 1.5, y + 1.5] {
-            cr.move_to(_x, _y);
-            let _ = cr.show_text(text);
-        }
-    }
-    cr.move_to(x, y);
-    cr.set_source_rgba(255.0, 255.0, 255.0, 1.0);
-    let _ = cr.show_text(text);
 }
 
 fn open_windows() -> Result<ListStore> {

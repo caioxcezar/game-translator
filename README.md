@@ -5,7 +5,6 @@ Aplicação para tradução de aplicativos através de OCR (Reconhecimento ótic
 ## Instalação
 
 É necessário instalar o [Tesseract](https://tesseract-ocr.github.io/tessdoc/Installation.html) para reconhecimento ótico de caracteres.  
-A aplicação atualmente necessita da fonte [Sarasa Gothic](https://github.com/be5invis/Sarasa-Gothic/releases) para exibir texto.
 
 ## Funcionalidades
 
