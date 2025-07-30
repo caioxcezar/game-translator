@@ -8,6 +8,7 @@ use crate::area_object::AreaData;
 pub fn draw_fitted_text_with_background(cr: &Context, area: &AreaData) -> Result<()> {
     if area.text.trim().is_empty() {
         cr.save()?;
+        return Ok(());
     }
 
     let rect = gtk::gdk::Rectangle::new(area.x, area.y, area.width, area.height);
